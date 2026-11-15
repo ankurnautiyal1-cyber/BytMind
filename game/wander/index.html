@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wander — an explorable open world</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏔️</text></svg>" />
+    <script type="module" crossorigin src="/game/wander/assets/index-BVWONH4s.js"></script>
+    <link rel="stylesheet" crossorigin href="/game/wander/assets/index-CP4aap9Z.css">
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="hud">
+      <div id="crosshair"></div>
+      <div id="brand" class="chip">WANDER</div>
+      <div id="stats" class="chip">
+        <div><b>Time</b><span id="hudTime">—</span></div>
+        <div><b>Biome</b><span id="hudBiome">—</span></div>
+        <div><b>Pos</b><span id="hudPos">—</span></div>
+        <div><b>Shards</b><span id="hudShards">—</span></div>
+      </div>
+      <canvas id="compass" width="340" height="40"></canvas>
+      <canvas id="minimap" width="172" height="172"></canvas>
+      <div id="toast"></div>
+      <div id="hint" class="chip">WASD move &nbsp;·&nbsp; mouse look &nbsp;·&nbsp; shift sprint &nbsp;·&nbsp; space jump / swim &nbsp;·&nbsp; hold P fly &nbsp;·&nbsp; V view &nbsp;·&nbsp; M map &nbsp;·&nbsp; Tab journal &nbsp;·&nbsp; esc pause</div>
+    </div>
+
+    <div id="tint"></div>
+
+    <div id="overlay">
+      <div class="card">
+        <div class="brand">W A N D E R</div>
+        <p class="tag">A procedurally generated open world · built with three.js</p>
+        <div class="keys">
+          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span>
+          <span><kbd>Mouse</kbd> look</span>
+          <span><kbd>Shift</kbd> sprint</span>
+          <span><kbd>Space</kbd> jump · swim</span>
+          <span><kbd>P</kbd> hold to fly</span>
+          <span><kbd>V</kbd> 1st / 3rd person</span>
+          <span><kbd>M</kbd> map</span>
+          <span><kbd>Tab</kbd> journal</span>
+          <span><kbd>Scroll</kbd> zoom</span>
+          <span><kbd>Esc</kbd> pause</span>
+        </div>
+        <div class="cta" id="cta">click to explore</div>
+        <p class="meta" id="seedLabel"></p>
+      </div>
+    </div>
+
+  </body>
+</html>

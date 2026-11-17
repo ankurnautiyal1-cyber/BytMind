@@ -41,7 +41,7 @@ os.makedirs(PREVIEW, exist_ok=True)
 
 FPS = 30
 VOXEL = 0.012          # remesh resolution (m) — body tri budget scales as 1/voxel²
-SMOOTH_REPEAT = 3      # Smooth modifier passes after remesh
+SMOOTH_REPEAT = 5      # Smooth modifier passes after remesh (limbs read as tubes, not beads)
 
 # ---------------------------------------------------------------- palette ----
 
@@ -49,13 +49,14 @@ REGIONS = [  # (name, color, roughness, priority bonus for near-tie faces)
     ("sole", 0x14100d, 1.0, 0.060),
     ("boot", 0x2c2620, 1.0, 0.052),
     ("pants", 0x39465a, 0.95, 0.044),
-    ("jacket", 0xc7562f, 0.85, 0.036),
+    ("jacket", 0x9c3b20, 0.85, 0.036),
     ("skin", 0xd9a878, 0.80, 0.000),
 ]
 DETAIL_COLORS = {
     "hair": (0x47331f, 1.0), "pack": (0x6b4f3a, 1.0), "cream": (0xe8ddc2, 1.0),
     "dark": (0x241d16, 1.0), "white": (0xf2efe9, 0.4), "iris": (0x3a2a1c, 0.35),
     "lips": (0xb5715f, 0.7),
+    "cloak": (0x1d5a66, 0.9), "gold": (0xe0b24f, 0.45),
 }
 
 
@@ -100,6 +101,29 @@ def boxv(name, region, center, half, rot=(0, 0, 0)):
     PART_DEFS.append(("box", region, Vector(center), Vector(half), rot, None))
 
 
+def _sm(t):
+    return t * t * (3 - 2 * t)
+
+
+def _interp(keys, t):
+    """Smoothly interpolate [(t, value), ...]."""
+    for (t0, v0), (t1, v1) in zip(keys, keys[1:]):
+        if t <= t1:
+            u = _sm(min(1.0, max(0.0, (t - t0) / max(1e-6, t1 - t0))))
+            return v0 + (v1 - v0) * u
+    return keys[-1][1]
+
+
+def chain(name, region, a, b, keys, n=11, yz=(1.0, 1.0), fine=False):
+    """A tapered tube of overlapping spheres from a to b; keys = [(t, radius)].
+    Dense, smoothly varying spheres fuse into a clean limb (no knuckled beads)."""
+    a, b = Vector(a), Vector(b)
+    for i in range(n + 1):
+        t = i / n
+        r = _interp(keys, t)
+        ell(f"{name}_{i}", region, tuple(a.lerp(b, t)), (r, r * yz[0], r * yz[1]), fine=fine)
+
+
 def define_body():
     # ---- torso (jacket) ----
     ell("waist_hem", "jacket", (0, 0, 1.045), (0.135, 0.100, 0.070))
@@ -112,13 +136,11 @@ def define_body():
         ell(f"scap{side}", "jacket", (0.058 * side, -0.088, 1.325), (0.050, 0.032, 0.060))
         ell(f"trap{side}", "jacket", (0.102 * side, 0.004, 1.437), (0.056, 0.050, 0.044))
         # ---- arms: sleeve to the elbow, bare forearm (rolled sleeves) ----
-        ell(f"delt{side}", "jacket", (0.205 * side, 0, 1.418), (0.064, 0.064, 0.064))
-        for t, r in ((0.15, 0.056), (0.38, 0.053), (0.62, 0.050), (0.86, 0.047)):
-            c = Vector((0.215 * side, 0, 1.415)).lerp(Vector((0.218 * side, 0.010, 1.13)), t)
-            ell(f"uarm{side}_{t}", "jacket", tuple(c), (r, r, r))
-        for t, r in ((0.10, 0.046), (0.35, 0.043), (0.60, 0.038), (0.86, 0.033)):
-            c = Vector((0.218 * side, 0.010, 1.13)).lerp(Vector((0.222 * side, 0.022, 0.875)), t)
-            ell(f"farm{side}_{t}", "skin", tuple(c), (r, r, r))
+        ell(f"delt{side}", "jacket", (0.205 * side, 0, 1.418), (0.066, 0.066, 0.066))
+        chain(f"uarm{side}", "jacket", (0.215 * side, 0, 1.415), (0.218 * side, 0.010, 1.13),
+              [(0.0, 0.058), (0.3, 0.055), (0.7, 0.050), (1.0, 0.046)], n=10)
+        chain(f"farm{side}", "skin", (0.218 * side, 0.010, 1.13), (0.222 * side, 0.022, 0.875),
+              [(0.0, 0.043), (0.3, 0.042), (0.65, 0.036), (1.0, 0.030)], n=9)
 
     # ---- pelvis + legs (pants) ----
     ell("hipblock", "pants", (0, 0, 0.985), (0.150, 0.112, 0.072))
@@ -127,16 +149,13 @@ def define_body():
         ell(f"glut{side}", "pants", (0.070 * side, -0.056, 0.942), (0.071, 0.062, 0.068))
         ell(f"hipj{side}", "pants", (0.096 * side, 0.012, 0.908), (0.072, 0.070, 0.078))
         # thigh: hip (0.098,0,0.925) -> knee (0.104, 0.012, 0.50)
-        for t, r, ry in ((0.08, 0.087, 0.083), (0.28, 0.080, 0.076),
-                         (0.48, 0.071, 0.067), (0.68, 0.060, 0.056), (0.88, 0.052, 0.050)):
-            c = Vector((0.098 * side, 0, 0.925)).lerp(Vector((0.104 * side, 0.012, 0.50)), t)
-            ell(f"thigh{side}_{t}", "pants", tuple(c), (r, ry, r * 1.12))
-        ell(f"knee{side}", "pants", (0.104 * side, 0.020, 0.500), (0.051, 0.051, 0.051))
+        chain(f"thigh{side}", "pants", (0.098 * side, 0, 0.925), (0.104 * side, 0.012, 0.50),
+              [(0.0, 0.087), (0.35, 0.078), (0.7, 0.062), (1.0, 0.052)], n=13, yz=(0.95, 1.1))
+        ell(f"knee{side}", "pants", (0.104 * side, 0.020, 0.500), (0.050, 0.050, 0.050))
         # shin: knee -> ankle (0.104, 0.006, 0.075)
-        for t, r in ((0.16, 0.054), (0.40, 0.050), (0.60, 0.046), (0.78, 0.042), (0.92, 0.038)):
-            c = Vector((0.104 * side, 0.012, 0.50)).lerp(Vector((0.104 * side, 0.006, 0.075)), t)
-            ell(f"shin{side}_{t}", "pants", tuple(c), (r, r, r))
-        ell(f"calf{side}", "pants", (0.104 * side, -0.012, 0.372), (0.053, 0.050, 0.072))
+        chain(f"shin{side}", "pants", (0.104 * side, 0.012, 0.50), (0.104 * side, 0.006, 0.075),
+              [(0.0, 0.052), (0.25, 0.053), (0.6, 0.045), (1.0, 0.037)], n=12)
+        ell(f"calf{side}", "pants", (0.104 * side, -0.012, 0.372), (0.050, 0.048, 0.070))
         # ---- boot: cuff, heel, foot, toe + flat sole ----
         ell(f"bcuff{side}", "boot", (0.104 * side, 0.006, 0.135), (0.058, 0.058, 0.088))
         ell(f"bheel{side}", "boot", (0.104 * side, -0.024, 0.062), (0.049, 0.052, 0.050))
@@ -352,6 +371,50 @@ def build_details():
             sph("buckle", "cream", (0, 0.118, 1.078), (0.021, 0.009, 0.015))]
     out["Belt"] = join_named("Belt", belt)
 
+    # mantle: a shoulder yoke over the jacket (the long cape hangs from it in-engine)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=36, ring_count=18, radius=1.0, location=(0, 0, 0))
+    man = bpy.context.active_object
+    man.name = "mantle"
+    man.scale = (0.272, 0.172, 0.105)
+    bpy.ops.object.transform_apply(scale=True)
+    bm = bmesh.new()
+    bm.from_mesh(man.data)
+    kill = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        if c.z < 0.012:                                   # keep only the dome
+            kill.append(f)
+        elif c.z > 0.062 and abs(c.x) < 0.075 and abs(c.y) < 0.075:   # neck hole
+            kill.append(f)
+        elif c.y > 0.06 and abs(c.x) < 0.045:             # open at the throat
+            kill.append(f)
+    bmesh.ops.delete(bm, geom=kill, context="FACES")
+    bm.to_mesh(man.data)
+    bm.free()
+    man.location = (0, -0.012, 1.428)
+    bpy.ops.object.transform_apply(location=True)
+    sol = man.modifiers.new("Solidify", "SOLIDIFY")
+    sol.thickness = 0.014
+    bpy.ops.object.modifier_apply(modifier="Solidify")
+    man.data.materials.append(MATS["cloak"])
+    trim = torus("mantle_trim", "gold", 0.225, 0.0075, (0, -0.012, 1.432), scale=(1.2, 0.77, 1.0), seg=40, ring=8)
+    out["Mantle"] = join_named("Mantle", [man, trim])
+
+    # hood: bunched cloth resting behind the neck
+    hood = [sph("hood_a", "cloak", (0, -0.092, 1.512), (0.098, 0.082, 0.072), seg=20, ring=14),
+            sph("hood_b", "cloak", (0.050, -0.070, 1.530), (0.050, 0.050, 0.050)),
+            sph("hood_c", "cloak", (-0.050, -0.070, 1.530), (0.050, 0.050, 0.050)),
+            sph("hood_tip", "cloak", (0, -0.150, 1.488), (0.034, 0.045, 0.060), rot=(0.5, 0, 0))]
+    out["Hood"] = join_named("Hood", hood)
+
+    # a little lantern on the right hip: glass, gold cap and base, a loop of cord
+    lan = [sph("lantern_glass", "lantern", (0.158, 0.038, 0.935), (0.030, 0.030, 0.038), seg=16, ring=12),
+           cyl("lantern_cap", "gold", 0.026, 0.012, (0.158, 0.038, 0.976), seg=12),
+           cyl("lantern_base", "gold", 0.024, 0.010, (0.158, 0.038, 0.893), seg=12),
+           torus("lantern_loop", "gold", 0.014, 0.0035, (0.158, 0.038, 0.996), scale=(1, 0.4, 1), seg=12, ring=6),
+           cyl("lantern_cord", "dark", 0.0025, 0.07, (0.150, 0.036, 1.03), rot=(0, 0.18, 0), seg=6)]
+    out["Lantern"] = join_named("Lantern", lan)
+
     out["Scarf"] = torus("scarf", "cream", 0.068, 0.016, (0, 0.008, 1.49), scale=(1, 0.95, 1))
     bpy.ops.object.shade_smooth()
     return out
@@ -384,6 +447,7 @@ BONES = [  # (name, head, tail, parent)
 ATTACH_BONES = {  # rigid attachment object -> bone
     "EyeL": "Head", "EyeR": "Head", "Hair": "Head", "Mouth": "Head",
     "HandL": "Hand_L", "HandR": "Hand_R", "Backpack": "Chest",
+    "Mantle": "Chest", "Hood": "Chest", "Lantern": "Hips",
 }
 SKINNED_EXTRAS = ("Belt", "Scarf")  # auto-weighted so they flex with the body
 
@@ -778,6 +842,18 @@ def main():
         MATS[f"char_{name}"] = make_mat(f"char_{name}", hexc, rough)
     for name, (hexc, rough) in DETAIL_COLORS.items():
         MATS[name] = make_mat(f"char_{name}", hexc, rough)
+    # the lantern glass glows (the engine pulses it, and bloom does the rest)
+    lm = bpy.data.materials.new("char_lantern")
+    lm.use_nodes = True
+    b = lm.node_tree.nodes["Principled BSDF"]
+    b.inputs["Base Color"].default_value = (1.0, 0.72, 0.35, 1.0)
+    for n in ("Emission Color", "Emission"):
+        if b.inputs.get(n) is not None:
+            b.inputs[n].default_value = (1.0, 0.72, 0.35, 1.0)
+            break
+    if b.inputs.get("Emission Strength") is not None:
+        b.inputs["Emission Strength"].default_value = 3.0
+    MATS["lantern"] = lm
     print("[1/5] building fused body...")
     body = build_body()
     print(f"  body: {len(body.data.polygons)} faces, {len(body.data.materials)} materials")

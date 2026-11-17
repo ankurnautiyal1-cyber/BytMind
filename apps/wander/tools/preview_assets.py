@@ -1,63 +1,27 @@
 #!/usr/bin/env python3
-"""Render a contact sheet of the generated assets for a quick visual check.
+"""Render a contact sheet of generated glb assets for review.
 
 Usage:
   /Applications/Blender.app/Contents/MacOS/Blender --background \
-      --python tools/preview_assets.py
-Writes public/assets/_preview.png.
+      --python tools/preview_assets.py -- [name ...] [--out tools/preview/sheet.png]
+
+With no names it renders the landmark set. Names are file stems in public/assets.
+(The old version wrote public/assets/_preview.png and came out blank because it never
+set a world or a ground colour; this one reuses wander_bpy.contact_sheet.)
 """
-
-import math
 import os
+import sys
 
-import bpy
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+import wander_bpy as wb  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.normpath(os.path.join(HERE, "..", "public", "assets"))
-
-NAMES = ["ruin_tower.glb", "lighthouse.glb", "windmill_body.glb",
-         "windmill_blades.glb", "stone_arch.glb", "shipwreck.glb",
-         "tent.glb", "campfire.glb", "monolith.glb", "shrine_pedestal.glb"]
-
-# clean scene
-bpy.ops.object.select_all(action="SELECT")
-bpy.ops.object.delete()
-
-for i, name in enumerate(NAMES):
-    bpy.ops.import_scene.gltf(filepath=os.path.join(OUT, name))
-    root = bpy.context.selected_objects[0]
-    root.location = ((i % 5) * 26 - 52, (i // 5) * -30, 0)
-    label = name.replace(".glb", "")
-    root.name = label
-
-# ground
-bpy.ops.mesh.primitive_plane_add(size=400, location=(0, -15, 0))
-bpy.context.active_object.name = "ground"
-ground_mat = bpy.data.materials.new("ground")
-ground_mat.diffuse_color = (0.32, 0.42, 0.3, 1)
-bpy.context.active_object.data.materials.append(ground_mat)
-
-# camera looking at the grid, slightly elevated
-cam_data = bpy.data.cameras.new("cam")
-cam = bpy.data.objects.new("cam", cam_data)
-bpy.context.scene.collection.objects.link(cam)
-cam.location = (0, 55, 38)
-cam.rotation_euler = (math.radians(72), 0, 0)
-cam_data.lens = 50
-bpy.context.scene.camera = cam
-
-# sun + sky
-sun_data = bpy.data.lights.new("sun", "SUN")
-sun_data.energy = 3
-sun = bpy.data.objects.new("sun", sun_data)
-bpy.context.scene.collection.objects.link(sun)
-sun.rotation_euler = (math.radians(50), math.radians(15), math.radians(30))
-
-scene = bpy.context.scene
-scene.render.engine = "BLENDER_EEVEE"
-scene.render.resolution_x = 1600
-scene.render.resolution_y = 700
-scene.render.filepath = os.path.join(OUT, "_preview.png")
-scene.render.image_settings.file_format = "PNG"
-bpy.ops.render.render(write_still=True)
-print("preview written:", scene.render.filepath)
+argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+out = os.path.join(wb.PREVIEW, "sheet.png")
+if "--out" in argv:
+    i = argv.index("--out")
+    out = os.path.abspath(argv[i + 1])
+    argv = argv[:i] + argv[i + 2:]
+names = argv or ["ruin_tower", "lighthouse", "windmill_body", "windmill_blades", "stone_arch",
+                 "shipwreck", "tent", "campfire", "monolith", "shrine_pedestal"]
+files = [(os.path.join(wb.OUT, f"{n}.glb"), n) for n in names if os.path.exists(os.path.join(wb.OUT, f"{n}.glb"))]
+wb.contact_sheet(files, out, cell=float(os.environ.get("CELL", 16)))

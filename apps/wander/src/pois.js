@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { WATER_LEVEL, WORLD_HALF } from './terrain.js';
 import { mulberry32 } from './noise.js';
-import { makeFlame, Smoke, glowSprite } from './effects.js';
+import { makeFlame, Smoke, glowSprite, beamMaterial } from './effects.js';
 import { CollisionWorld } from './colliders.js';
 
 // Landmarks: seeded sites across the world, composed from the Blender-built
@@ -138,7 +138,18 @@ export class POIs {
       if (!t) return null;
       const m = t.clone(true);
       m.traverse((o) => {
-        if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+        if (o.isMesh) {
+          o.castShadow = true; o.receiveShadow = true;
+          // glowing parts get their own material so each instance can pulse on its own
+          const nm = o.material?.name;
+          if (nm === 'rune' || nm === 'lantern' || nm === 'lh_lamp') {
+            o.material = o.material.clone();
+            o.castShadow = false;
+            const g = { mat: o.material, kind: nm, base: o.material.emissiveIntensity || 1, idx: 0, n: 1, phase: Math.random() * 10 };
+            this.glows.push(g);
+            (m.userData.glows ||= []).push(g);
+          }
+        }
       });
       return m;
     };
@@ -149,6 +160,10 @@ export class POIs {
     this.beams = [];    // { group, coneMat, halo? }
     this.crystals = []; // { mesh, halo, light, baseY, phase }
     this.banners = [];  // { mesh, base, phase }
+    this.glows = [];    // { mat, kind, base, idx, n, phase } emissive parts that follow the night
+    this.orbiters = []; // small shards circling a crystal
+    this.lanternBulbs = []; // string-light bulb sets { inst, phases }
+    this._bulbCol = new THREE.Color();
     this.colliders = new CollisionWorld();
     this._v = new THREE.Vector3();
 
@@ -178,22 +193,24 @@ export class POIs {
     const body = clone('lighthouse');
     if (body) { body.rotation.y = r() * Math.PI * 2; g.add(body); }
     this._cyl(s, 0, 0, 3.0, 14);
-    // rotating night beam: additive cone from the lamp room
+    // rotating night beam: a soft volumetric cone (and a tighter bright core) from the lamp room
     const beam = new THREE.Group();
     beam.position.y = 12.35;
-    const coneGeo = new THREE.ConeGeometry(20, 240, 12, 1, true);
-    coneGeo.rotateX(Math.PI / 2); // axis along +z
-    coneGeo.translate(0, 0, -120);
-    const coneMat = new THREE.MeshBasicMaterial({
-      color: 0xffe9a8, transparent: true, opacity: 0,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
-    });
-    beam.add(new THREE.Mesh(coneGeo, coneMat));
-    const halo = glowSprite(0xffe9a8, 6);
-    halo.position.y = 12.35 - 0; // relative to group root, not beam
+    const mk = (radius, color, fall, soft) => {
+      const geo = new THREE.ConeGeometry(radius, 260, 20, 1, true);
+      geo.rotateX(Math.PI / 2); // axis along +z
+      geo.translate(0, 0, -130);
+      return new THREE.Mesh(geo, beamMaterial(color, { length: 260, axis: 'z', fall, soft }));
+    };
+    const wide = mk(22, 0xffe3a0, 1.5, 1.4);
+    const core = mk(7, 0xfff4d0, 1.0, 1.1);
+    beam.add(wide, core);
+    const coneMat = wide.material;
+    const halo = glowSprite(0xffe9a8, 7);
+    halo.position.y = 12.35;
     g.add(halo);
     g.add(beam);
-    this.beams.push({ group: beam, coneMat, halo });
+    this.beams.push({ group: beam, coneMat, coreMat: core.material, halo, isBeam: true });
   }
 
   _build_shipwreck(s, g, clone, r) {
@@ -275,6 +292,7 @@ export class POIs {
       m.rotation.set((r() - 0.5) * 0.12, ry, (r() - 0.5) * 0.12);
       m.scale.setScalar(sc);
       g.add(m);
+      for (const gl of m.userData.glows || []) { gl.idx = i; gl.n = n; gl.mat.emissive.set(0x66e0c0); }
       // monolith slab: 1.5 × 0.85 footprint, 3.6 tall at unit scale
       this._box(s, Math.cos(a) * R, Math.sin(a) * R, 0.78 * sc, 0.46 * sc, 3.6 * sc, ry);
     }
@@ -307,10 +325,14 @@ export class POIs {
     this._cyl(s, 0, 0, 1.05, 1.5); // tiered pedestal, standable top
     const colors = [0x7fe3c8, 0xb59dff, 0xffd25e, 0x8fc7ff];
     const c = new THREE.Color(colors[Math.floor(r() * colors.length)]);
+    for (const gl of ped?.userData.glows || []) { gl.mat.emissive.copy(c); gl.kind = 'inlay'; }
+    // a six-sided crystal that catches the sky, with an iridescent sheen
+    const pts = [[0.0, -0.78], [0.3, -0.18], [0.34, 0.22], [0.0, 0.8]].map(([x, y]) => new THREE.Vector2(x, y));
     const crystal = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.5),
-      new THREE.MeshStandardMaterial({
-        color: c, emissive: c, emissiveIntensity: 3.4, roughness: 0.25, flatShading: true,
+      new THREE.LatheGeometry(pts, 6),
+      new THREE.MeshPhysicalMaterial({
+        color: c, emissive: c, emissiveIntensity: 3.0, roughness: 0.1, metalness: 0,
+        clearcoat: 1, iridescence: 0.9, iridescenceIOR: 1.6, flatShading: true, envMapIntensity: 1.6,
       }),
     );
     const baseY = 2.5;
@@ -321,7 +343,24 @@ export class POIs {
     const light = new THREE.PointLight(c.getHex(), 0, 16, 1.8);
     light.position.y = baseY + 0.2;
     g.add(crystal, halo, light);
-    this.crystals.push({ mesh: crystal, halo, light, baseY, phase: r() * Math.PI * 2 });
+    // a soft shaft of light rising from the crystal
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.1, 0.14, 16, 16, 1, true),
+      beamMaterial(c, { length: 16, axis: 'y', fall: 0.9, soft: 1.7, centered: true }),
+    );
+    shaft.position.y = baseY + 8.2;
+    g.add(shaft);
+    // orbiting shards
+    const shardGeo = new THREE.OctahedronGeometry(0.09);
+    const shardMat = new THREE.MeshBasicMaterial({ color: c.clone().multiplyScalar(2.5) });
+    const orbit = [];
+    for (let i = 0; i < 6; i++) {
+      const m = new THREE.Mesh(shardGeo, shardMat);
+      g.add(m);
+      orbit.push({ m, a: (i / 6) * Math.PI * 2, rad: 0.9 + (i % 2) * 0.25, h: (i % 3) * 0.25 - 0.2, sp: 0.7 + (i % 3) * 0.2 });
+    }
+    this.orbiters.push({ baseY, list: orbit });
+    this.crystals.push({ mesh: crystal, halo, light, baseY, phase: r() * Math.PI * 2, shaft });
   }
 
   _build_arch(s, g, clone, r) {
@@ -398,6 +437,35 @@ export class POIs {
     banner.position.set(4.4, 4.0, 0);
     g.add(banner);
     this.banners.push({ mesh: banner, base: r() * Math.PI * 2, phase: r() * 10 });
+
+    // string lights: tent lantern -> banner pole -> second tent, drooping in a catenary
+    const rot = (x, z, ry) => [x * Math.cos(ry) + z * Math.sin(ry), -x * Math.sin(ry) + z * Math.cos(ry)];
+    const [lx, lz] = rot(0, -1.85, mainRy);   // the glb's lantern hangs at the tent's front (+Y in Blender = -Z here)
+    const anchors = [new THREE.Vector3(lx, 1.5, lz), new THREE.Vector3(4.4, 4.05, 0)];
+    if (small) anchors.push(small.position.clone().add(new THREE.Vector3(0, 1.35, 0)));
+    anchors.push(new THREE.Vector3(-3.2, 1.2, -2.6));
+    const bulbGeo = new THREE.SphereGeometry(0.075, 8, 6);
+    const stringMat = new THREE.LineBasicMaterial({ color: 0x2a2018 });
+    const bulbPts = [];
+    for (let k = 0; k < anchors.length - 1; k++) {
+      const A = anchors[k], B = anchors[k + 1];
+      const pts = [];
+      const N = 18, sag = 0.5 + A.distanceTo(B) * 0.08;
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        pts.push(new THREE.Vector3().lerpVectors(A, B, t).add(new THREE.Vector3(0, -sag * 4 * t * (1 - t), 0)));
+      }
+      g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), stringMat));
+      for (let i = 2; i < N; i += 3) bulbPts.push(pts[i]);
+    }
+    // every bulb of this camp in one instanced draw; the colour (and so the glow) is set per frame
+    const inst = new THREE.InstancedMesh(bulbGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), bulbPts.length);
+    const phases = [];
+    const dummy = new THREE.Matrix4();
+    bulbPts.forEach((p, i) => { dummy.makeTranslation(p.x, p.y, p.z); inst.setMatrixAt(i, dummy); inst.setColorAt(i, new THREE.Color(1, 0.78, 0.45)); phases.push(r() * 10); });
+    inst.frustumCulled = false;
+    g.add(inst);
+    this.lanternBulbs.push({ inst, phases });
   }
 
   addFlame(g, x, y, z, scale) {
@@ -422,7 +490,7 @@ export class POIs {
   }
 
   discoverAll() {
-    // silent variant for the debug hook — no toast/chime spam
+    // silent variant for the debug hook — no toast spam
     for (const s of this.sites) s.discovered = true;
   }
 
@@ -455,13 +523,35 @@ export class POIs {
       f.light.intensity = near ? (0.35 + 2.6 * night) * flick : 0;
     }
 
-    // lighthouse beam + halo + shrine glow ramp with night
+    // lighthouse beam + halo + ring glow ramp with night
     for (const b of this.beams) {
       if (b.group) b.group.rotation.y = elapsed * 0.55;
       const o = Math.pow(night, 1.4);
-      if (b.isRing) b.coneMat.opacity = o * 0.35 * (0.8 + 0.2 * Math.sin(elapsed * 1.5));
+      if (b.isBeam) {
+        b.coneMat.uniforms.uOpacity.value = o * 0.55;
+        b.coreMat.uniforms.uOpacity.value = o * 0.9;
+      } else if (b.isRing) b.coneMat.opacity = o * 0.35 * (0.8 + 0.2 * Math.sin(elapsed * 1.5));
       else b.coneMat.opacity = o * 0.22;
       if (b.halo) b.halo.material.opacity = Math.min(1, 0.15 + o);
+    }
+
+    // emissive parts that follow the night: lamp room, lanterns, monolith runes, shrine inlay
+    const nt = Math.pow(night, 1.2);
+    for (const g of this.glows) {
+      if (g.kind === 'lh_lamp') g.mat.emissiveIntensity = g.base * (0.12 + 0.88 * nt);
+      else if (g.kind === 'lantern') g.mat.emissiveIntensity = g.base * (0.05 + 0.95 * nt) * (0.9 + 0.1 * Math.sin(elapsed * 7 + g.phase));
+      else if (g.kind === 'rune') {
+        // the glyphs light one after another around the circle, a slow travelling pulse
+        const w = 0.5 + 0.5 * Math.cos(elapsed * 0.8 - (g.idx / Math.max(1, g.n)) * Math.PI * 2);
+        g.mat.emissiveIntensity = nt * (0.25 + 3.2 * Math.pow(w, 3));
+      } else if (g.kind === 'inlay') g.mat.emissiveIntensity = nt * (1.6 + 1.0 * Math.sin(elapsed * 2 + g.phase));
+    }
+    for (const b of this.lanternBulbs) {
+      b.phases.forEach((ph, i) => {
+        const k = 0.18 + 2.6 * nt * (0.92 + 0.08 * Math.sin(elapsed * 5 + ph));
+        b.inst.setColorAt(i, this._bulbCol.setRGB(1.0 * k, 0.78 * k, 0.45 * k));
+      });
+      b.inst.instanceColor.needsUpdate = true;
     }
 
     // shrine crystals bob + spin
@@ -474,6 +564,14 @@ export class POIs {
       c.light.visible = near;
       c.light.intensity = near ? night * 1.6 * pulse : 0;
       c.mesh.material.emissiveIntensity = 2.0 + night * 2.6 * pulse;
+      if (c.shaft) c.shaft.material.uniforms.uOpacity.value = (0.1 + 0.9 * night) * 0.5 * pulse;
+    }
+    for (const o of this.orbiters) {
+      o.list.forEach((s, i) => {
+        const a = s.a + elapsed * s.sp;
+        s.m.position.set(Math.cos(a) * s.rad, o.baseY + s.h + Math.sin(elapsed * 1.3 + i) * 0.12, Math.sin(a) * s.rad);
+        s.m.rotation.y = a * 2;
+      });
     }
 
     this.smoke.update(dt, this.env.wind.value, elapsed);

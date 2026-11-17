@@ -374,6 +374,7 @@ export class SkySystem {
     this.quality = quality;
     this.time = 0.34; // 0 = midnight, 0.25 = sunrise, 0.5 = noon
     this.dayLength = DAY_LENGTH;
+    this.frozen = false; // photo mode can stop the clock
     this.daylight = 1;
     this.dusk = 0;
     this.world = 'nature';
@@ -477,7 +478,7 @@ export class SkySystem {
     if (this.world === 'city') {
       speed = 0.42 + 1.1 * smoothstep(-0.08, 0.38, this.sunDir.y);
     }
-    this.time = (this.time + (dt * speed) / this.dayLength) % 1;
+    if (!this.frozen) this.time = (this.time + (dt * speed) / this.dayLength) % 1;
     const theta = (this.time - 0.25) * Math.PI * 2;
     const sy = Math.sin(theta);
     this.sunDir.set(Math.cos(theta), sy, 0.32).normalize();

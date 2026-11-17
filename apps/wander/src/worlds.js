@@ -134,6 +134,7 @@ export class Worlds {
   }
 
   async transit(target, player, portal) {
+    this.transiting = true;
     const fade = this._fade;
     await this._warp(0, 1, 850);        // the world stretches into the doorway
     fade.classList.add('on');            // caption over the wash
@@ -148,6 +149,7 @@ export class Worlds {
     await new Promise((r) => setTimeout(r, 140));
     fade.classList.remove('on');
     await this._warp(1, 0, 1100);       // …and the new one settles back in
+    this.transiting = false;
     this.onModeChange?.(target);
   }
 

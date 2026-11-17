@@ -192,10 +192,10 @@ export function lawnPaint(material) {
   inject(material, 'lawn', {
     fragColor: `
       float stripe = step(0.0, sin(dot(vFW.xz, vec2(0.62, 0.41)) * 1.1));
-      float patch = qn(vFW.xz * 0.06);
+      float lawnPatch = qn(vFW.xz * 0.06);
       float fine = qn(vFW.xz * 1.7);
       diffuseColor.rgb *= 0.86 + 0.14 * stripe;
-      diffuseColor.rgb *= vec3(0.9 + 0.2 * patch, 0.95 + 0.1 * patch, 0.85 + 0.1 * (1.0 - patch));
+      diffuseColor.rgb *= vec3(0.9 + 0.2 * lawnPatch, 0.95 + 0.1 * lawnPatch, 0.85 + 0.1 * (1.0 - lawnPatch));
       diffuseColor.rgb *= 0.92 + 0.16 * fine;`,
   });
 }

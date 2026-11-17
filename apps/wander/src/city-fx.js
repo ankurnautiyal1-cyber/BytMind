@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Smoke, makeFlame, glowSprite } from './effects.js';
 import { cityTime } from './city-shaders.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Everything that makes New York feel alive after dark: tube-neon signs, roof
 // beacons, searchlights, the Empire State's colour-changing crown, the torch,
@@ -230,6 +231,9 @@ export class CityFX {
     this._bridgeLights();
     this._lampCones();
     this._steam();
+    this._bridgeCables();
+    this._heliLights();
+    this._aircraft();
     this._parkLights();
     this._ley();
     this._rain();
@@ -399,20 +403,148 @@ export class CityFX {
     this.parts.cones = mesh;
   }
 
-  // ---- steam rising from the manholes ----
+  // ---- steam: vent grates in the road and the odd orange-and-white stack ----
   _steam() {
     const site = this.layout.sites.find((s) => s.type === 'neon') || { x: 0, z: 0 };
     this.smoke = new Smoke(this.group);
     this.smoke.mesh.material.depthWrite = false;
-    let n = 0, tries = 0;
+    const spots = [];
+    let tries = 0;
     let seed = 99;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    while (n < 14 && tries++ < 400) {
+    while (spots.length < 14 && tries++ < 400) {
       const x = site.x + (rnd() - 0.5) * 180, z = site.z + (rnd() - 0.5) * 220;
       const w = this.city.toWorld(x, z);
       if (Math.abs(this.city.heightAt(w.x, w.z) - 2.0) > 0.05) continue;   // on the road
-      this.smoke.addEmitter(new THREE.Vector3(x, 2.1, z), 1.3, 1.4);
-      n++;
+      spots.push([x, z]);
+    }
+    // grates: a dark disc with slots (every vent), stacks: striped chimneys (every third)
+    const grateGeo = new THREE.CylinderGeometry(0.62, 0.62, 0.05, 14);
+    const grateMat = new THREE.MeshStandardMaterial({ color: 0x1b1d21, roughness: 0.5, metalness: 0.6 });
+    const grates = new THREE.InstancedMesh(grateGeo, grateMat, spots.length);
+    const stackGeo = new THREE.CylinderGeometry(0.3, 0.42, 3.0, 12, 6, true);
+    const cols = new Float32Array(stackGeo.attributes.position.count * 3);
+    for (let i = 0; i < stackGeo.attributes.position.count; i++) {
+      const band = Math.floor((stackGeo.attributes.position.getY(i) + 1.5) / 0.5 + 0.001);
+      const c = band % 2 ? [0.95, 0.95, 0.92] : [0.95, 0.38, 0.1];
+      cols.set(c, i * 3);
+    }
+    stackGeo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    const cap = new THREE.CylinderGeometry(0.18, 0.3, 0.5, 12);
+    cap.translate(0, 1.75, 0);
+    const capCols = new Float32Array(cap.attributes.position.count * 3).fill(0.95);
+    cap.setAttribute('color', new THREE.BufferAttribute(capCols, 3));
+    const merged = mergeGeometries([stackGeo, cap]);
+    merged.translate(0, 1.5, 0);
+    const stackMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, side: THREE.DoubleSide });
+    const stackIdx = spots.map((_, i) => i).filter((i) => i % 3 === 1);
+    const stacks = new THREE.InstancedMesh(merged, stackMat, Math.max(1, stackIdx.length));
+    const m = new THREE.Matrix4();
+    spots.forEach(([x, z], i) => {
+      m.makeTranslation(x, 2.03, z);
+      grates.setMatrixAt(i, m);
+      const si = stackIdx.indexOf(i);
+      const tall = si >= 0;
+      if (tall) { m.makeTranslation(x + 0.0, 2.0, z); stacks.setMatrixAt(si, m); }
+      this.smoke.addEmitter(new THREE.Vector3(x, tall ? 5.1 : 2.1, z), tall ? 1.9 : 1.3, tall ? 1.8 : 1.4);
+    });
+    stacks.count = stackIdx.length;
+    for (const o of [grates, stacks]) { o.frustumCulled = false; o.castShadow = true; this.group.add(o); }
+  }
+
+  // ---- swags of lights drooping between posts along every bridge deck ----
+  _bridgeCables() {
+    const items = [];
+    const lines = [];
+    for (const br of this.layout.bridges || []) {
+      const [ax, az] = br.p0, [bx, bz] = br.p1;
+      const len = Math.hypot(bx - ax, bz - az);
+      const dx = (bx - ax) / len, dz = (bz - az) / len;
+      const nx = -dz, nz = dx;
+      const span = 22, sag = 1.6;
+      for (const side of [-1, 1]) {
+        for (let s0 = 0; s0 + span <= len + 0.1; s0 += span) {
+          let prev = null;
+          for (let k = 0; k <= 10; k++) {
+            const t = k / 10;
+            const s = s0 + span * t;
+            const y = br.deck + 5.2 - 4 * sag * t * (1 - t);
+            const p = [ax + dx * s + nx * 8.6 * side, y, az + dz * s + nz * 8.6 * side];
+            if (prev) lines.push(...prev, ...p);
+            prev = p;
+            if (k > 0 && k < 10 && k % 2 === 1) items.push({ p, c: [2.4, 1.8, 0.9], size: 0.55, phase: (s * 0.11) % 1 });
+          }
+          // the post the swag hangs from
+          lines.push(ax + dx * s0 + nx * 8.6 * side, br.deck, az + dz * s0 + nz * 8.6 * side,
+            ax + dx * s0 + nx * 8.6 * side, br.deck + 5.2, az + dz * s0 + nz * 8.6 * side);
+        }
+      }
+    }
+    if (!lines.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+    const cable = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x20252c }));
+    cable.frustumCulled = false;
+    this.group.add(cable);
+    if (items.length) this.group.add(new LightPoints(items, 0.2).mesh);
+  }
+
+  // ---- helicopter strobes: a red beacon on the tail boom, a white double-flash underneath ----
+  _heliLights() {
+    this.heliLights = [];
+    for (const h of this.city.helis || []) {
+      const red = glowSprite(0xff2a1a, 5);
+      const white = glowSprite(0xffffff, 6);
+      for (const sp of [red, white]) { sp.material.fog = false; sp.material.opacity = 0; }
+      red.position.set(0, 2.6, 6.0);
+      white.position.set(0, 0.6, 0);
+      h.g.add(red, white);
+      this.heliLights.push({ red, white, ph: Math.random() * 3 });
+    }
+  }
+
+  // ---- airliners crossing high over the harbour, with navigation lights ----
+  _aircraft() {
+    this.planes = [];
+    const body = new THREE.MeshStandardMaterial({ color: 0xc9ced6, roughness: 0.5, metalness: 0.3 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.7 });
+    const fuselage = new THREE.CapsuleGeometry(2.1, 30, 4, 10); fuselage.rotateZ(Math.PI / 2);
+    const wing = new THREE.BoxGeometry(7, 0.5, 40); wing.translate(-1, -0.6, 0);
+    const wingR = wing.clone(); const wingL = wing.clone();
+    const tail = new THREE.BoxGeometry(4, 0.4, 13); tail.translate(-14.5, 0.8, 0);
+    const fin = new THREE.BoxGeometry(5, 6.5, 0.5); fin.translate(-14.5, 4, 0);
+    const eng = new THREE.CylinderGeometry(1.2, 1.3, 5, 10); eng.rotateZ(Math.PI / 2);
+    const mk = (flip) => {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(fuselage, body), new THREE.Mesh(wing, body), new THREE.Mesh(tail, body), new THREE.Mesh(fin, body));
+      for (const z of [-9, 9]) { const e = new THREE.Mesh(eng, dark); e.position.set(2, -2.3, z); g.add(e); }
+      const lights = {};
+      const add = (name, color, size, x, y, z) => {
+        const sp = glowSprite(color, size);
+        sp.material.fog = false; sp.material.opacity = 0;
+        sp.position.set(x, y, z);
+        g.add(sp);
+        lights[name] = sp;
+      };
+      add('red', 0xff2a1a, 22, -1, -0.5, -20);      // port wing tip
+      add('green', 0x33ff66, 22, -1, -0.5, 20);     // starboard wing tip
+      add('strobeL', 0xffffff, 30, -3, -0.5, -20);
+      add('strobeR', 0xffffff, 30, -3, -0.5, 20);
+      add('tail', 0xffffff, 12, -17.5, 3, 0);
+      add('beacon', 0xff2a1a, 14, 0, 2.3, 0);       // anti-collision, top of the fuselage
+      g.scale.setScalar(flip ? 1.9 : 2.3); // seen from a kilometre or more, so a little larger than life
+      return { g, lights };
+    };
+    const plan = [
+      { ang: 0.35, off: -900, alt: 900, speed: 95, t: 0.15 },
+      { ang: 2.45, off: 1200, alt: 1250, speed: 110, t: 0.62 },
+      { ang: 5.4, off: 300, alt: 700, speed: 80, t: 0.9 },
+    ];
+    for (const p of plan) {
+      const { g, lights } = mk(p.alt > 1000);
+      g.visible = false;
+      this.world.add(g);
+      this.planes.push({ ...p, g, lights });
     }
   }
 
@@ -578,6 +710,32 @@ export class CityFX {
     if (this.torch) {
       this.torch.flame.material.uniforms.uTime.value = elapsed;
       this.torch.halo.material.opacity = 0.35 + 0.15 * Math.sin(elapsed * 7);
+    }
+    // helicopter strobes
+    const lit = smooth(0.1, 0.6, night);
+    for (const hl of this.heliLights || []) {
+      const t = elapsed + hl.ph;
+      hl.red.material.opacity = lit * (0.2 + 0.8 * (Math.sin(t * 4.2) > 0.6 ? 1 : 0));
+      const f = t % 1.4;
+      hl.white.material.opacity = lit * ((f < 0.08 || (f > 0.22 && f < 0.3)) ? 1 : 0);
+    }
+    // airliners: a straight pass over the city every couple of minutes
+    const SPAN = 7000;
+    for (const pl of this.planes || []) {
+      pl.t += (pl.speed * dt) / SPAN;
+      if (pl.t > 1) pl.t -= 1;
+      const along = (pl.t - 0.5) * SPAN;
+      const dx = Math.cos(pl.ang), dz = Math.sin(pl.ang);
+      pl.g.position.set(dx * along - dz * pl.off, pl.alt, dz * along + dx * pl.off);
+      pl.g.rotation.y = -Math.atan2(dz, dx);
+      pl.g.visible = true;
+      const L = pl.lights;
+      const tt = elapsed + pl.ang * 7;
+      L.red.material.opacity = L.green.material.opacity = lit * 0.9;
+      L.tail.material.opacity = lit * 0.6;
+      const strobe = (tt % 1.6) < 0.07 || ((tt % 1.6) > 0.2 && (tt % 1.6) < 0.27) ? 1 : 0;
+      L.strobeL.material.opacity = L.strobeR.material.opacity = lit * strobe;
+      L.beacon.material.opacity = lit * ((tt % 1.1) < 0.12 ? 1 : 0.0);
     }
     if (this.smoke) {
       this.smoke.mesh.material.color.setRGB(0.78, 0.8, 0.84).lerp(new THREE.Color(0.32, 0.34, 0.5), night);

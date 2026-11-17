@@ -342,6 +342,29 @@ def build_trees():
         broadleaf("autumn", 8, (srgb(0xb0501e), srgb(0xf2b441)), blobs=6, size=2.3),
     ]
     export("nature_trees.glb", objs)
+    build_tree_lods(objs)
+
+
+def build_tree_lods(objs):
+    """Far-LOD copies (~30% of the triangles) for the engine's distance bins. Same
+    silhouettes, vertex colours kept; the engine swaps them in past ~120 m."""
+    lods = []
+    for o in objs:
+        d = o.copy()
+        d.data = o.data.copy()
+        bpy.context.collection.objects.link(d)
+        d.name = o.name + "_lod"
+        md = d.modifiers.new("dec", "DECIMATE")
+        md.ratio = 0.3
+        bpy.context.view_layer.objects.active = d
+        bpy.ops.object.select_all(action="DESELECT")
+        d.select_set(True)
+        bpy.ops.object.modifier_apply(modifier=md.name)
+        d.data.shade_smooth()
+        lods.append(d)
+    for o, d in zip(objs, lods):
+        print(f"    {o.name}: {len(o.data.polygons)} -> {len(d.data.polygons)} faces (lod)")
+    export("nature_trees_lod.glb", lods)
 
 
 def build_rocks():

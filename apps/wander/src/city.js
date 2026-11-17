@@ -675,7 +675,7 @@ export class City {
       return [w.x, w.z];
     });
 
-    ctx.fillStyle = '#0e1622'; // harbor
+    ctx.fillStyle = '#081624'; // harbor
     ctx.fillRect(0, 0, px, px);
 
     // backdrop landmasses (coarse rects from the tracked layout)
@@ -683,20 +683,20 @@ export class City {
       if (top > 3.5) continue;
       if (x1 - x0 < 40 && z1 - z0 < 40) continue;
       polyPath(rot([[x0, z0], [x1, z0], [x1, z1], [x0, z1]]));
-      ctx.fillStyle = '#1d2a38';
+      ctx.fillStyle = '#122233';
       ctx.fill();
     }
 
     // the island
     polyPath(rot(this._island));
-    ctx.fillStyle = '#39404a';
+    ctx.fillStyle = '#1b2a3b';
     ctx.fill();
-    ctx.strokeStyle = '#5a6472';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#4d6b86';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
     // park + battery + wash sq
-    const rects = [['park', '#33502f'], ['battery', '#2c4429'], ['washsq', '#2c4429']];
+    const rects = [['park', '#1d5545'], ['battery', '#194636'], ['washsq', '#194636']];
     for (const [key, color] of rects) {
       const r = this._rects[key];
       if (!r) continue;
@@ -706,8 +706,8 @@ export class City {
     }
 
     // roads
-    ctx.strokeStyle = '#2a3140';
-    ctx.lineWidth = Math.max(1, 4 * sc);
+    ctx.strokeStyle = '#34495f';
+    ctx.lineWidth = Math.max(1, 3.2 * sc);
     ctx.beginPath();
     for (const av of this._L.avenues) {
       const runs = av.runs?.length ? av.runs : [[av.z0, av.z1]];
@@ -730,8 +730,8 @@ export class City {
     }
     ctx.stroke();
     // broadway + bridges
-    ctx.strokeStyle = '#3a4354';
-    ctx.lineWidth = Math.max(1, 3 * sc);
+    ctx.strokeStyle = '#e86fd6'; // Broadway: the bright diagonal
+    ctx.lineWidth = Math.max(1.5, 3.4 * sc);
     ctx.beginPath();
     for (const [x0, z0, x1, z1] of this._L.broadway) {
       const [ax, az] = w2p(...Object.values(this.toWorld(x0, z0)));
@@ -739,7 +739,8 @@ export class City {
       ctx.moveTo(ax, az); ctx.lineTo(bx, bz);
     }
     ctx.stroke();
-    ctx.strokeStyle = '#5a5245';
+    ctx.strokeStyle = '#f0b35a';
+    ctx.lineWidth = Math.max(1.5, 3 * sc);
     for (const b of this._L.bridges) {
       const [ax, az] = w2p(...Object.values(this.toWorld(b.p0[0], b.p0[1])));
       const [bx, bz] = w2p(...Object.values(this.toWorld(b.p1[0], b.p1[1])));

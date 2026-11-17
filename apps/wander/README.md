@@ -14,11 +14,22 @@ npm install
 npm run dev        # → http://localhost:5173
 ```
 
-Regenerate the Blender-built landmark/city assets (needs Blender installed):
+Regenerate the Blender-built assets (needs Blender installed). `build_assets.py` still makes the
+city's buildings, streetlight and monument; everything else has its own script:
 
 ```bash
-/Applications/Blender.app/Contents/MacOS/Blender --background --python tools/build_assets.py
+B=/Applications/Blender.app/Contents/MacOS/Blender
+$B --background --python tools/build_assets.py       # city buildings, streetlight, monument
+$B --background --python tools/build_landmarks.py    # the 10 Wilds landmark models (bevels, moss, baked AO)
+$B --background --python tools/build_cliffs.py       # cliff pieces for steep slopes
+$B --background --python tools/build_wildlife.py     # sheep, deer, cow and the luminous stag
+$B --background --python tools/build_vehicles.py     # car, taxi, bus, truck
+$B --background --python tools/preview_assets.py -- ruin_tower lighthouse   # contact sheet → tools/preview/sheet.png
 ```
+
+The scripts share `tools/lib/wander_bpy.py` (primitives, bevel, the painted vertex-colour pipeline:
+tonal noise, strata, moss, dirt, baked ambient occlusion; glb export; contact-sheet renderer).
+The older scripts (portal, character, city) keep their own copies of the small helpers.
 
 Rebuild the trees and rocks (tiered pines and firs, oaks, birch, blossom and autumn trees,
 six mossy rocks, baked vertex colours):
@@ -68,7 +79,47 @@ Want a different wild world? Append a seed to the URL: `http://localhost:5173/?s
 | `M` | Big map (fog-of-war in the wilds, street map in the city) |
 | `Tab` | Field journal (discoveries, rumors, progress, reset) |
 | Mouse wheel | Zoom the third-person camera |
+| `C` | **Photo mode** (see below) |
+| `N` | Sound on / off |
+| `O` | Settings (graphics tier, volume, field of view, look sensitivity…) |
+| `U` | Hood up / down (it also goes up by itself in the rain) |
+| `H` | Controls sheet |
 | `Esc` | Close panels · pause / release the mouse |
+
+A **controller** works too: sticks to move and look, `A` jump, `B` sprint, `Y` fly, `X` journal,
+`LB` / `RB` camera out / in, `L3` first / third person, Select = map, Start = pause, D-pad ↑ photo mode,
+↓ controls, ← sound, → settings.
+
+### Photo mode (`C`)
+
+The explorer holds still, the HUD hides and the camera is yours.
+
+| Input | Action |
+| --- | --- |
+| `W A S D` · `Q` / `E` | Fly the camera · down / up (`Shift` fast, `Alt` slow) |
+| Mouse · wheel | Look · zoom (field of view) |
+| `[` `]` | Depth of field: off · soft · light · portrait · wide · macro |
+| `,` `.` | Scrub the time of day (`Shift` faster) · `T` freezes the clock |
+| `X` · `G` | Show / hide the explorer · rule-of-thirds guides |
+| `Enter` | Save a PNG of exactly what the canvas shows |
+| `C` / `Esc` | Back to the game |
+
+Focus follows whatever is under the centre of the frame and eases like a lens; longer lenses blur
+more. The camera stays within 60 m of the explorer.
+
+## Settings (`O`)
+
+Graphics tier (applied live: resolution, anti-aliasing, grass, shadows, effects, ambient occlusion;
+tree count and the street mirror's resolution wait for the next load), adaptive frame rate, a frame-rate
+readout, sound on / off and volume, field of view, look sensitivity, inverted look, reset progress. All of
+it is remembered. Opening it from play pauses the game.
+
+## Sound
+
+No audio files — everything is synthesised (`src/soundscape.js`, `src/sfx.js`). Wind that follows the
+world's gusts, leaves in forests, lapping water near shores, birds by day and crickets at night in the
+Wilds; a low mains hum, far traffic, the odd horn and rain in New York; footsteps and splashes; a muffled
+mix underwater; and a spatial hum from the gate that rises as you near it.
 
 ## The two worlds
 
@@ -127,9 +178,14 @@ strips) leads back.
 Your current world, all discoveries and shards persist in `localStorage` per seed.
 
 ## HUD & journal
-Compass strip with nearby discovered landmarks, live minimap (fog-of-war in the
-wilds, GPS-style street map in the city), clock, biome/district label, coordinates,
-shard counter, discovery toasts, and the `M` map / `Tab` journal panels.
+A quiet, glassy HUD that fades after a few seconds without input: the place name in serif with
+clock and coordinates, a ribbon compass with discovered landmarks, a round minimap (inked
+parchment in the wilds with fog of war, a transit diagram in the city), and a shard counter that
+pulses when you collect one. Finding a landmark plays a cinematic title card (letterbox, serif
+name, flavour line); crossing worlds does the same for the arrival. `M` opens the big map, `Tab`
+the field journal — illustrated cards, each with a photograph taken at the moment you found the
+landmark — and `H` a compact controls sheet. The title screen drifts around the explorer and eases
+into the game camera on Enter.
 
 ## Collision
 `src/colliders.js` is a small static collision world: vertical cylinders (tree
@@ -151,17 +207,23 @@ landmarks and the gate; the city builds its own on first transit) and the
 `Worlds` manager hands the active one to the player.
 
 ## Character
-`src/character.js` builds a fully procedural humanoid — no model files. The rig
-mirrors a real skeleton (pelvis → spine → chest → neck → head, hips → knees →
-ankles, shoulders → elbows → wrists → hands with individual fingers and thumbs),
-plus a sculpted face: eyes with pupils that blink, eyebrows, nose, mouth, ears,
-swept hair with a nape tuft. Clothing is layered on top — jacket with collar,
-scarf and zip, chest pockets, belt, backpack with bedroll and shoulder straps,
-cuffed boots with soles. All animation is procedural and state-driven: walk/run
-cycles with knee lift and counter-swinging elbows, breathing and weight-shift
-idles, a spread-limbed airborne pose, a crawl stroke while swimming, and a
-head that tracks where you're looking. Fire up `char-preview.html` to inspect
-the rig in isolation (pose/camera helpers on `window`).
+The explorer is built in Blender (`tools/build_character.py`): ~90 tapered volumes fused by voxel
+remesh into one smooth body (limbs are dense chains of overlapping spheres, so they read as tubes),
+a 19-bone skeleton with automatic weights, hands with fingers, a shoulder mantle, a bunched hood, a
+belt lantern, and six frame-baked clips (idle / walk / run / swim / fly / fall) that
+`src/character.js` crossfades by movement state, adding head look and blinking. Previews of every
+pose land in `tools/preview/`.
+
+On top of the baked rig the engine adds:
+- **Cloth** (`src/cloth.js`): a verlet cape from the shoulders and two scarf tails from the neck,
+  simulated in world space so they trail, whip and settle with real motion, with wind, air drag and
+  a body-collision pass.
+- **Rim light** (`src/rim.js`): a soft rim of sky light that follows the hour, so the silhouette
+  separates from any background (neon-tinted in the city).
+- **Lantern**: the belt lantern glows brighter after dark and lights the cape.
+- **Motion polish** (`src/player-fx.js`): footstep dust tinted by the ground (spray on wet streets),
+  take-off and landing puffs, splash and foamy wake when wading, a glowing trail and wind streaks
+  when flying fast. In the wilds the grass parts around you and flattens underfoot.
 
 ## Project layout
 
@@ -169,8 +231,13 @@ the rig in isolation (pose/camera helpers on `window`).
 index.html          page shell + HUD/overlay markup
 char-preview.html   standalone character rig inspector (dev tool)
 tools/
-  build_assets.py     Blender headless generator → public/assets/*.glb
-  build_nature.py     Blender headless trees + rocks → nature_trees.glb, nature_rocks.glb
+  lib/wander_bpy.py   shared Blender helpers (painted vertex colours, baked AO, bevel, export, contact sheet)
+  build_assets.py     city buildings, streetlight, monument → public/assets/*.glb
+  build_landmarks.py  the 10 Wilds landmarks
+  build_cliffs.py     cliff pieces → nature_cliffs.glb
+  build_wildlife.py   animals → wildlife.glb
+  build_vehicles.py   car / taxi / bus / truck
+  build_nature.py     Blender headless trees + rocks (+ decimated far-LOD trees) → nature_trees(.lod).glb, nature_rocks.glb
   build_portal.py     Blender headless Ancient Gate + fragments → portal_*.glb
   build_character.py  Blender headless player character → character.glb
   preview_assets.py   renders a contact sheet of the generated assets
@@ -187,9 +254,16 @@ src/
   grass.js          GPU grass, wildflowers, glowing toadstools (follow the player)
   wisps.js          night wisps that lead to undiscovered landmarks
   leaves.js         falling autumn leaves (dissolve above the ground)
-  wildlife.js       herds of sheep, deer and cows
-  character.js      third-person humanoid rig + procedural animations
-  char-preview.js   rig inspector scene for char-preview.html
+  wildlife.js       herds of sheep, deer and cows (Blender models) + the night-only luminous stags
+  fp-hands.js       first-person arms and the held lantern
+  settings.js       settings panel (live graphics tier, volume, FOV, sensitivity…)
+  gamepad.js        controller support (turns sticks/buttons into the keyboard events the game uses)
+  soundscape.js     procedural ambience, footsteps, gate hum
+  character.js      Blender explorer: clip state machine, head look, cloth + lantern hookup
+  cloth.js          verlet cape and scarf
+  rim.js            sky-colour rim light for the explorer
+  player-fx.js      dust, splashes, wake, flight trail and wind streaks
+  char-preview.js   rig inspector scene for char-preview.html (legacy procedural rig)
   player.js         movement (walk / swim / fly), collision, camera
   pois.js           landmark sites: placement, discovery, animations
   orbs.js           collectible spirit shards
@@ -203,8 +277,8 @@ src/
   worlds.js         dual-world manager, ground/collider delegation, transit
   journal.js        big map (M) + field journal (Tab)
   hud.js            compass, minimap, biome/time/shard readouts
-  icons.js          canvas glyphs for every landmark type
-  sfx.js            synthesized chimes (no audio files)
+  icons.js          canvas glyphs + an SVG set for every landmark type and a few UI glyphs
+  photo.js          photo mode (free camera, depth of field, PNG capture)
 ```
 
 ## Tuning knobs
@@ -234,14 +308,36 @@ split-tone, vignette, grain) → optional SMAA. The sky (`src/sky.js`) is a cust
 with a stylised sun and moon, coloured stars, a Milky Way, shooting stars, an aurora over
 the wilds and noise clouds; it is also baked into an environment map for lighting.
 
-Quality: `?q=low`, `?q=medium` (default) or `?q=high`; the choice is remembered.
+Ambient occlusion is a custom depth-only pass (`src/render/ao.js`, half resolution, depth-aware blur;
+medium 0.6, high 0.9, off on low) — three's GTAO re-renders the scene with an override material, which
+breaks the sway trees, water and sprites. Trees are binned by distance every half-second into the full
+mesh, a ~30% decimated mesh and a baked cross-card impostor; only the first two cast shadows.
+
+### Quality
+
+`?q=low`, `?q=medium` (default) or `?q=high`, or pick one in the controls sheet (`H`); the choice
+is remembered. Measured on an M1 Pro at 1440×900 @2x, GPU time per frame across the five fixed
+views (bench below):
+
+| Tier | Resolution | Anti-aliasing | Frame cost |
+| --- | --- | --- | --- |
+| low | 1× | SMAA | ~8–18 ms |
+| medium | 1.25× | SMAA | ~12–18 ms |
+| high | 1.4× | 2× MSAA | ~17–27 ms |
+
+Pixels × MSAA is the big lever (4× MSAA on the half-float target was ~8 ms of a 24 ms frame),
+which is why medium and high no longer use it. On top of the tier, an **adaptive resolution**
+governor lowers the pixel ratio when the frame rate sags and restores it when there is headroom;
+if fewer pixels don't help (the frame is geometry- or CPU-bound) it gives them back and stops
+trying for a while. Switch it off in the controls sheet or with `?adapt=0`.
 
 Fixed camera bookmarks for before/after comparisons:
 
 ```js
 await __wander.shot('gate-night')   // see __wander.shots for every name
 __wander.hold = false               // release the player afterwards
-__wander.stats()                    // fps, draw calls, triangles
+__wander.stats()                    // fps, cpu/submit ms, draw calls, triangles, resolution scale
+await __wander.bench('meadow-noon') // GPU ms per frame at a bookmark (works with the tab hidden)
 ```
 
 ## Debug hooks
@@ -256,6 +352,11 @@ __wander.setTime(0.9)           // 0 = midnight, 0.5 = noon
 __wander.discoverAll()          // reveal every landmark
 __wander.collectAll()           // collect every shard
 __wander.pois.sites             // poke the landmarks
+__wander.step(30)               // run frames by hand (a hidden tab throttles timers to ~1 Hz)
+__wander.applyQuality('high')   // switch graphics tier live
+__wander.scenery.lodStats       // trees per LOD bin (near / mid / impostor)
+__wander.photo                  // photo mode state (active, pos, fov, apIdx…)
+__wander.adaptive               // the resolution governor (level, enabled)
 ```
 
 ## Notes

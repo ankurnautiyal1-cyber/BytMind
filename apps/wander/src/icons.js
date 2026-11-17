@@ -125,3 +125,37 @@ export function drawPoiIcon(ctx, type, x, y, s) {
   }
   ctx.restore();
 }
+
+// ---------------------------------------------------------------------------
+// SVG set: the same landmark glyphs as above, drawn as 24×24 vector paths for
+// the DOM (journal badges, map tooltips, panels), plus a few UI glyphs. Fill
+// uses currentColor, so a parent's `color` (or the type's own colour) tints them.
+
+const P = {
+  lighthouse: '<path d="M8.4 21 10 9.5h4L15.6 21z"/><rect x="9.2" y="5.2" width="5.6" height="3.4" rx=".8"/><path d="M12 2.2l3 2.4H9z"/><path d="M3 6h4M17 6h4M3.6 3.4l3 1.4M20.4 3.4l-3 1.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  shipwreck: '<path d="M2.6 13.4 21 10.2l-2.6 7.6H6z"/><path d="M12.2 12V3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12.8 4.2l5 5.2h-5z" opacity=".8"/>',
+  windmill: '<path d="M10 14.4h4L15.4 22H8.6z"/><circle cx="12" cy="11.6" r="1.7"/><path d="M12 11.6 5.6 5.2M12 11.6l6.4-6.4M12 11.6l6.4 6.4M12 11.6 5.6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  ruinTower: '<path d="M6.5 22V8h3.2v3h4.6V8h3.2v14z"/><path d="M6.5 8h3.2V5H6.5zM14.3 8h3.2V5h-3.2z" opacity=".75"/>',
+  stoneCircle: '<circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="4.6" r="2"/><circle cx="18.4" cy="8.3" r="2"/><circle cx="18.4" cy="15.7" r="2"/><circle cx="12" cy="19.4" r="2"/><circle cx="5.6" cy="15.7" r="2"/><circle cx="5.6" cy="8.3" r="2"/>',
+  shrine: '<path fill-rule="evenodd" d="M12 2.4 18.4 12 12 21.6 5.6 12zM12 9.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8z"/>',
+  arch: '<path d="M3.2 22V13a8.8 8.8 0 0 1 17.6 0v9h-5v-9a3.8 3.8 0 0 0-7.6 0v9z"/>',
+  camp: '<path d="M2.4 20.6 12 3.6l9.6 17z"/><path d="M12 20.6l-3-6.4h6z" fill="#08131c" opacity=".7"/>',
+  gate: '<path d="M3.4 22V9h4v13zM16.6 22V9h4v13zM2.4 9V5.4h19.2V9z"/><ellipse cx="12" cy="16" rx="3.6" ry="5.4" opacity=".7"/>',
+  cityTower: '<path d="M7.6 22V9.6h8.8V22z"/><path d="M9.8 9.6V5h4.4v4.6z"/><path d="M12 5V1.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  park: '<path d="M12 2.6 19.6 16H4.4z"/><path d="M10.9 15.5h2.2V22h-2.2z"/>',
+  monument: '<path d="M12 4 15.4 18H8.6z"/><path d="M5.4 18h13.2v3H5.4z"/><circle cx="12" cy="2.6" r="1.6"/>',
+  neon: '<path fill-rule="evenodd" d="M2.4 5.6h19.2v12.8H2.4zM5 8v8h6V8zM13 8v8h6V8z"/>',
+  // UI glyphs
+  camera: '<path fill-rule="evenodd" d="M3 7.6h3.4l1.4-2.4h8.4l1.4 2.4H21v11.8H3zM12 9.4a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z"/>',
+  gear: '<path fill-rule="evenodd" d="M10.3 2.6h3.4l.5 2.5 1.6.7 2.1-1.4 2.4 2.4-1.4 2.1.7 1.6 2.5.5v3.4l-2.5.5-.7 1.6 1.4 2.1-2.4 2.4-2.1-1.4-1.6.7-.5 2.5h-3.4l-.5-2.5-1.6-.7-2.1 1.4-2.4-2.4 1.4-2.1-.7-1.6-2.5-.5v-3.4l2.5-.5.7-1.6-1.4-2.1 2.4-2.4 2.1 1.4 1.6-.7zM12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z"/>',
+  map: '<path d="M3 5.8 9 3.6l6 2.2 6-2.2v14.6l-6 2.2-6-2.2-6 2.2z" opacity=".9"/><path d="M9 3.6v14.6M15 5.8v14.6" fill="none" stroke="#08131c" stroke-width="1" opacity=".5"/>',
+  journal: '<path d="M5 3.4h12.4A1.6 1.6 0 0 1 19 5v15.6H7A2 2 0 0 1 5 18.6z"/><path d="M8.4 8h7M8.4 11.4h7" fill="none" stroke="#08131c" stroke-width="1.2" opacity=".55" stroke-linecap="round"/>',
+  gamepad: '<path d="M7.6 6.4h8.8c2.6 0 4.2 2 4.8 5.6l.6 4.2c.3 2-1.5 3-2.8 1.8L16.8 16H7.2L4.6 18c-1.3 1.2-3.1.2-2.8-1.8l.6-4.2c.6-3.6 2.2-5.6 5.2-5.6z"/>',
+};
+
+export function svgIcon(type, size = 20, color = null) {
+  const body = P[type];
+  if (!body) return '';
+  const c = color || POI_ICONS[type]?.color || 'currentColor';
+  return `<svg class="ico" viewBox="0 0 24 24" width="${size}" height="${size}" fill="${c}" style="color:${c}" aria-hidden="true">${body}</svg>`;
+}

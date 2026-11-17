@@ -134,8 +134,8 @@ Notes and deviations:
   150 m and refreshed every ~14 s. The city is now built quietly ~1 s after the title card appears
   (`Worlds.prepareCity`), so the first crossing no longer hitches and the window works immediately.
 - **The city gate now faces down the avenue grid** (it was 29° off, so you used to arrive beside it).
-- **Not done:** a proximity hum (needs a sound pass), and the plaza is runtime dressing (pool, light
-  strips) rather than new geometry in `build_city.py`.
+- **Not done:** the plaza is runtime dressing (pool, light
+  strips) rather than new geometry in `build_city.py`. (The proximity hum arrived in Phase 7.)
 - Fixed in passing: the wilds gate no longer shows as a ghost while you are in New York.
 - `build_assets.py` no longer generates the gate (it would overwrite the new one).
 
@@ -243,7 +243,15 @@ Notes and deviations:
 10. **Asset weight**: `city_blocks.glb` is 11.9 MB and `city_ground.glb` 3.7 MB. Compress
     geometry (meshopt) and textures (KTX2) so the first crossing stays quick.
 
-### Phase 5 — Character
+### Phase 5 — Character — DONE (first pass) 2026-11-15
+
+Shipped: rebuilt body in `tools/build_character.py` (dense tapered limb chains + more smoothing, so the
+striped lumpy limbs are gone; a mantle, hood, hip lantern, deeper jacket), `src/cloth.js` (cape + scarf
+tails), `src/rim.js`, `src/player-fx.js`, grass parting in `grass.js`. Deviations: the cloth is a CPU
+verlet simulation rather than a vertex shader (so it collides with the body and reacts to real
+motion); the cape/scarf are engine-side, not in the glb. Not done: a fully redesigned silhouette (hood
+up, different proportions), foot IK, first-person hands, and a water wake that follows the swim
+stroke — the wake is emitted from the body position.
 
 1. Rebuild in `tools/build_character.py` as a clean stylised explorer: proper hands,
    defined silhouette, hooded cloak or long scarf that trails behind.
@@ -252,7 +260,22 @@ Notes and deviations:
 4. Motion polish: footstep dust and grass parting, water wake, a glowing trail and
    wind streaks while flying, landing puff.
 
-### Phase 6 — Interface
+### Phase 6 — Interface — DONE (first pass) 2026-11-15
+
+Shipped: fonts (Cormorant Garamond for titles and place names, Inter for UI, both self-hosted from
+npm via `@fontsource`), a rewritten `style.css`, new `index.html` markup, `hud.js` (quiet HUD that
+fades after 7 s without input, ribbon compass, circular minimap, shard counter that pulses,
+cinematic discovery/arrival cards with a letterbox, parchment chart of the wilds), `journal.js`
+(illustrated cards; the wilds map as parchment, the city map as a transit diagram), and `main.js`
+(title-screen camera that sweeps in front of the explorer and eases into the chase camera on Enter;
+landmark photographs).
+Notes: the journal thumbnails are real photographs — when a landmark is found, one extra frame is
+rendered from a vantage point facing it (explorer hidden), shrunk to ~14 KB and saved with the
+progress; landmarks found before this change get a painted glyph card instead. Compass hides under
+the place name on narrow windows. Not done: custom SVG icon set beyond the HUD glyphs (landmark
+icons are still the canvas glyphs), hover tooltips on the map, and a settings panel (quality is
+still `?q=`).
+
 
 1. **Typography**: a display serif for titles and place names, a clean sans for UI,
    self-hosted from npm font packages (no CDN).
@@ -267,13 +290,64 @@ Notes and deviations:
 5. **Journal**: illustrated cards per landmark using a rendered thumbnail of each one.
 6. Rename "The Wilds" to "The Meadow" in copy if wanted — see Decision 4.
 
-### Phase 7 — Polish and performance
+### Phase 7 — Polish and performance — DONE (first pass) 2026-11-15
 
-- Tune the quality tiers against the Phase 0 budget; drop AO and light shafts first.
-- Photo mode (free camera, hide HUD, depth of field) — cheap to add once the composer
-  exists and shows the work off.
-- Optional ambient soundscape (wind, water, city hum) to match the visuals.
-- Update `README.md` and the debug hooks.
+Shipped: photo mode (`src/photo.js`, `src/render/dof.js`), a procedural soundscape
+(`src/soundscape.js`), retuned quality tiers with an adaptive-resolution governor
+(`src/render/adaptive.js`), a settings block in the controls sheet, `__wander.bench()`, README.
+Notes and deviations:
+- **Photo mode (`C`)**: free camera within 60 m of the explorer, depth of field that focuses on the
+  centre of the frame (a 1×1 ping-pong depth probe, eased like a lens; a 40-tap gather blur whose
+  radius comes from the circle of confusion in diopters, scaled by focal length), clock scrub and
+  freeze, hide the explorer, thirds guides, `Enter` saves a PNG. The blur is applied to the HDR frame,
+  so bright lights bloom into bokeh. Hooked into `AtmospherePass` so it can read the scene depth
+  without a feedback loop.
+- **Soundscape**: wind, leaves, water, birds, crickets, city hum / traffic / horns / rain, footsteps,
+  landings, a muffled mix underwater, and a spatial hum from the gate (this also closes the Phase 2
+  "proximity hum" item). Built and checked for correct layer levels in every situation (shore, forest,
+  night, gate, city, rain, underwater) and for the one-shots firing; **it has not been listened to**, so
+  the mix is a first guess.
+- **Quality tuning**, measured with `__wander.bench()` on an M1 Pro at 1440×900 @2x. The old tiers did
+  not meet the budget: medium ran 12–25 ms and high 24–39 ms (pixel ratio 2, 4× MSAA). 4× MSAA alone
+  was ~8 ms of a 24 ms frame. Now: low 1× + SMAA, medium 1.25× + SMAA, high 1.4× + 2× MSAA and a little
+  less grass. Medium is ~12–18 ms (about 55–80 fps), high ~17–27 ms (about 37–59 fps) — a touch under the
+  45 fps floor in the densest meadow view. Ambient occlusion never existed, so shafts, mist and the
+  street mirror are the first things a tier drops.
+- **Adaptive resolution** steps the pixel ratio through 1 / .85 / .72 / .6 on sustained sag, ignores
+  hitches, and reverts a step that didn't help (geometry-bound frames).
+- Bugs found and fixed on the way: the city lawn shader used the reserved word `patch` (it never
+  compiled, same trap as Phase 4's toadstools), and the explorer's cloth could go NaN on the first
+  frame (`dt = 0`) and vanish for good.
+- **Not done:** a settings panel beyond the three rows in the controls sheet, in-game quality changes
+  without a reload, tree LODs / impostors (the real fix for forest frame cost), gamepad support.
+
+### Phase 8 — Closing the open items — DONE (first pass) 2026-11-16
+
+Everything the earlier phases listed as "not done", in the order it was tackled. Where a first pass fell
+short of the original wording, that is said here.
+
+| Open item (phase) | What shipped |
+|---|---|
+| Preview sheets, shared Blender helpers (§4) | `tools/lib/wander_bpy.py` (painted vertex-colour pipeline, bevel, baked AO, export, contact sheet) and a working `preview_assets.py` (the old one rendered a blank image and wrote into `public/`). The new scripts use it; the older ones (portal, character, city, nature) keep their own copies. |
+| Rebuild the landmark models (P3) | `tools/build_landmarks.py`: coursed ruin tower with a broken crown, banded lighthouse with gallery + copper dome, timber-framed windmill with lattice sails, strata-banded stone arch, a lofted shipwreck hull, tent with guy ropes, campfire with tripod and kettle, runed monoliths, carved shrine pedestal. Moss, dirt, rain streaks, baked AO. Runtime (`pois.js`): a soft volumetric lighthouse beam (`beamMaterial`), monolith glyphs that light in a travelling sequence at night, a faceted iridescent shrine crystal with a light shaft and orbiting shards, lantern string lights at camps. |
+| Tree LODs / impostors, cliffs (P3, P7) | Decimated far-LOD trees (`nature_trees_lod.glb`), a baked two-view cross-card impostor per species, distance binning every 0.5 s, only near + mid cast shadows (forest scene: 3.0 M → 1.6 M triangles). `build_cliffs.py` + placement on steep slopes (cliffs are modest rock stacks, not full cliff faces). |
+| Wildlife remodel, luminous stag (P3) | `build_wildlife.py`: sheep (wool lumps), deer (long neck, antlers), cow (patches, horns, udder) as body/head/legs the old state machine animates, and the night-only stag: pale, glowing, antlered, with a halo and a light-mote trail; it watches from a distance and fades into the trees if you come near. |
+| Vehicles (P4) | `build_vehicles.py`: bevelled bodies, glass bands, wheels with hubs and arches, mirrors, grilles, glowing lamps; ~420 faces each (a first version at 1.6–2.4 k each cost too many triangles and was slimmed). |
+| Aircraft, steam stacks, heli strobes, cable lights (P4) | `city-fx.js`: three airliners with navigation lights and strobes crossing high over the city; orange-and-white steam stacks and road grates at the vents; red/white strobes on the helicopters; swags of lights drooping between posts along the bridge decks. |
+| Foot IK, first-person hands, swim-stroke wake, silhouette (P5) | Two-bone foot IK that plants each foot on the real ground (slopes, steps) with hips dropping to the lower foot; `fp-hands.js` (sleeved arms, gloved hands, the lantern, bob / sprint / fly / swim poses); splashes where each hand enters or leaves the water. The "redesigned silhouette" became a **cowl that pulls up over the head** (in rain, or `U`); the body proportions themselves were not redone. |
+| Icon set, map tooltips, settings panel (P6, P7) | SVG glyphs for every landmark type (journal badges, tooltips) plus UI glyphs; hover tooltips on the map (landmarks, the gate, "you are here"); `settings.js` panel (`O`) with live graphics tier, adaptive frame rate, FPS readout, volume, FOV, look sensitivity, invert Y. |
+| In-game quality change, gamepad (P7) | `applyQuality()` swaps resolution, MSAA/SMAA, grass density, LOD ranges and effect flags live (tree count and the street mirror still need a reload). `gamepad.js`: sticks, buttons, photo mode, pause. |
+| Ambient occlusion (P1) | `src/render/ao.js`, a depth-only 12-tap SSAO at half resolution with a depth-aware blur, applied in the atmosphere pass (medium 0.6, high 0.9, off on low); ~0.3 ms in the test scene. |
+| Plaza geometry in `build_city.py` (P2) | **Not done**: the gate plaza is still runtime dressing. |
+
+Bugs found and fixed on the way: foot IK called a missing `groundAt` while easing out (it killed the frame
+loop for good); the page booted from `requestAnimationFrame`, so a hidden tab never loaded the world (now a
+timer); the gamepad kept a stale button state after a controller disconnected; `__wander.step(n)` was added
+to drive frames by hand when the tab is throttled.
+
+Performance note: the 5-view bench drifts by up to ~35 % between runs on this Mac (GPU clock state), so
+after this phase "medium" is still in the same 55–60 fps region but the numbers above 16.7 ms were not
+re-tuned. Not verified by ear or by a person at a controller: all sound, the gamepad on real hardware.
 
 ---
 

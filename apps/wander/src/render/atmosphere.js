@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { Dof } from './dof.js';
+import { AO } from './ao.js';
 
 // Depth-aware atmosphere, applied to the HDR frame before bloom:
 //   · height-based valley mist (exponential height fog, analytic integral)
@@ -19,6 +21,8 @@ const vert = /* glsl */ `
 const frag = /* glsl */ `
   uniform sampler2D tDiffuse;
   uniform sampler2D tDepth;
+  uniform sampler2D tAO;
+  uniform float uAO;
   uniform mat4 uInvProj;
   uniform mat4 uCamWorld;
   uniform vec3 uCamPos;
@@ -48,6 +52,9 @@ const frag = /* glsl */ `
     vec3 rd = normalize((uCamWorld * vec4(normalize(vp.xyz), 0.0)).xyz);
 
     if (!sky) {
+      // ---- ambient occlusion (half-res, depth-aware) ----
+      if (uAO > 0.001) col *= mix(1.0, texture2D(tAO, vUv).r, uAO);
+
       // ---- valley mist ----
       float camH = max(uCamPos.y - uMistBase, 0.0);
       float k = uMistFall;
@@ -101,6 +108,8 @@ export class AtmospherePass extends Pass {
       uniforms: {
         tDiffuse: { value: null },
         tDepth: { value: null },
+        tAO: { value: null },
+        uAO: { value: 0 },
         uInvProj: { value: new THREE.Matrix4() },
         uCamWorld: { value: new THREE.Matrix4() },
         uCamPos: { value: new THREE.Vector3() },
@@ -124,15 +133,28 @@ export class AtmospherePass extends Pass {
     this.fsQuad = new FullScreenQuad(this.material);
     this.u = this.material.uniforms;
     this._v = new THREE.Vector3();
+
+    // photo-mode depth of field rides along: it needs this pass's depth buffer,
+    // and an intermediate target so it never samples the target it draws into
+    this.dof = new Dof();
+    this.ao = new AO();
+    this._tmp = null;
+    this._size = new THREE.Vector2(1, 1);
   }
 
-  setSize(w, h) { this.u.uAspect.value = w / h; }
+  setSize(w, h) {
+    this.u.uAspect.value = w / h;
+    this._size.set(w, h);
+    this._tmp?.setSize(w, h);
+    this.ao.setSize(w, h);
+  }
 
   render(renderer, writeBuffer, readBuffer) {
     const cam = this.camera;
     const u = this.u;
     u.tDiffuse.value = readBuffer.texture;
     u.tDepth.value = readBuffer.depthTexture;
+    u.tAO.value = u.uAO.value > 0.001 ? this.ao.render(renderer, cam, readBuffer.depthTexture) : null;
     u.uInvProj.value.copy(cam.projectionMatrixInverse);
     u.uCamWorld.value.copy(cam.matrixWorld);
     u.uCamPos.value.copy(cam.position);
@@ -144,11 +166,26 @@ export class AtmospherePass extends Pass {
     const f = this._fwd.dot(u.uSunDir.value);
     u.uSunVis.value = THREE.MathUtils.smoothstep(f, 0.05, 0.5) * (u.uSunDir.value.y > -0.05 ? 1 : 0);
 
-    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
-    this.fsQuad.render(renderer);
+    const out = this.renderToScreen ? null : writeBuffer;
+    if (this.dof.active) {
+      if (!this._tmp) {
+        this._tmp = new THREE.WebGLRenderTarget(this._size.x, this._size.y, {
+          type: THREE.HalfFloatType, depthBuffer: false,
+        });
+      }
+      renderer.setRenderTarget(this._tmp);
+      this.fsQuad.render(renderer);
+      this.dof.render(renderer, cam, this._tmp.texture, readBuffer.depthTexture, this._size, out);
+    } else {
+      renderer.setRenderTarget(out);
+      this.fsQuad.render(renderer);
+    }
   }
 
   dispose() {
+    this.dof.dispose();
+    this.ao.dispose();
+    this._tmp?.dispose();
     this.material.dispose();
     this.fsQuad.dispose();
   }

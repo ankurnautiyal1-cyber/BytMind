@@ -30,6 +30,64 @@ export function glowSprite(color, scale) {
   return spr;
 }
 
+// ---- volumetric-looking beam ----
+// An additive cone/cylinder whose brightness falls off toward its silhouette
+// (fresnel) and along its length, so it reads as light in dusty air rather than
+// as a flat cone. `axis` is the local axis the beam travels along (0..1 from the
+// source at 0 to the far end at 1).
+
+const beamVert = /* glsl */ `
+  uniform float uLen;
+  varying vec3 vN;
+  varying vec3 vV;
+  varying float vAlong;
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vN = normalize(mat3(modelMatrix) * normal);
+    vV = normalize(cameraPosition - wp.xyz);
+    #ifdef CENTERED
+      vAlong = clamp(position.AXIS / uLen + 0.5, 0.0, 1.0);
+    #else
+      vAlong = clamp(abs(position.AXIS) / uLen, 0.0, 1.0);
+    #endif
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`;
+const beamFrag = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  uniform float uFall;
+  uniform float uSoft;
+  varying vec3 vN;
+  varying vec3 vV;
+  varying float vAlong;
+  void main() {
+    float f = abs(dot(normalize(vN), normalize(vV)));
+    float edge = pow(f, uSoft);
+    float len = pow(max(1.0 - vAlong, 0.0), uFall) * smoothstep(0.0, 0.04, vAlong);
+    gl_FragColor = vec4(uColor * edge * len * uOpacity, 1.0);
+  }
+`;
+
+export function beamMaterial(color, { length = 100, axis = 'z', fall = 1.3, soft = 1.6, centered = false } = {}) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(color) },
+      uOpacity: { value: 0 },
+      uLen: { value: length },
+      uFall: { value: fall },
+      uSoft: { value: soft },
+    },
+    vertexShader: (centered ? '#define CENTERED\n' : '') + beamVert.replaceAll('position.AXIS', `position.${axis}`),
+    fragmentShader: beamFrag,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: false,
+  });
+}
+
 // ---- flame ----
 
 const flameVert = /* glsl */ `

@@ -1,4 +1,4 @@
-import { POI_ICONS, drawPoiIcon } from './icons.js';
+import { POI_ICONS, drawPoiIcon, svgIcon } from './icons.js';
 
 // Field journal (Tab) and the big map (M). Both are view-only — no fast
 // travel; the wilds are for walking (and P-flight). The city map is a
@@ -7,11 +7,12 @@ import { POI_ICONS, drawPoiIcon } from './icons.js';
 const MAP_PX = 540;
 
 export class Journal {
-  constructor(worlds, orbs, exploration, onReset) {
+  constructor(worlds, orbs, exploration, onReset, thumbs = {}) {
     this.worlds = worlds;
     this.orbs = orbs;
     this.exploration = exploration;
     this.onReset = onReset;
+    this.thumbs = thumbs; // landmark id -> data URL of the photograph taken when found
     this.mapOpen = false;
     this.journalOpen = false;
     this.resetArmed = false;
@@ -20,13 +21,17 @@ export class Journal {
     this._buildDom();
     this.setWorld(worlds.mode);
 
+    this.blockKeys = null; // photo mode takes the keyboard
     addEventListener('keydown', (e) => {
+      if (this.blockKeys?.() && e.code !== 'Escape') return;
       if (e.code === 'KeyM') this.toggleMap();
       if (e.code === 'Tab') {
         e.preventDefault();
         this.toggleJournal();
       }
       if (e.code === 'Escape' && (this.mapOpen || this.journalOpen)) this.closeAll();
+      if (e.code === 'KeyH') this.toggleHelp();
+      if (e.code === 'Escape') this.toggleHelp(false);
     });
   }
 
@@ -37,13 +42,33 @@ export class Journal {
     this.mapEl.className = 'panel hidden';
     this.mapEl.innerHTML = `
       <div class="panel-head">
-        <span class="panel-title">Map of the Wander</span>
+        <span class="panel-title" id="mapTitle">The Wilds</span>
         <span class="panel-sub" id="mapProgress"></span>
       </div>
-      <div class="map-wrap"><canvas id="mapCanvas" width="${MAP_PX}" height="${MAP_PX}"></canvas></div>
-      <div class="panel-foot">M or Esc to close · markers appear as you explore</div>`;
+      <div class="map-wrap"><canvas id="mapCanvas" width="${MAP_PX}" height="${MAP_PX}"></canvas><div id="mapTip" class="hidden"></div></div>
+      <div class="panel-foot">M or Esc to close</div>`;
     document.body.appendChild(this.mapEl);
-    this.mapCtx = this.mapEl.querySelector('#mapCanvas').getContext('2d');
+    const mapCv = this.mapEl.querySelector('#mapCanvas');
+    this.mapCtx = mapCv.getContext('2d');
+    this._pins = [];
+    this._hover = -1;
+    const tip = this.mapEl.querySelector('#mapTip');
+    mapCv.addEventListener('mousemove', (e) => {
+      const r = mapCv.getBoundingClientRect();
+      const k = MAP_PX / r.width;
+      const mx = (e.clientX - r.left) * k, my = (e.clientY - r.top) * k;
+      let best = -1, bd = 1e9;
+      this._pins.forEach((p, i) => { const d = Math.hypot(p.x - mx, p.y - my); if (d < p.r + 4 && d < bd) { bd = d; best = i; } });
+      this._hover = best;
+      if (best < 0) { tip.classList.add('hidden'); return; }
+      tip.innerHTML = this._pins[best].html;
+      tip.classList.remove('hidden');
+      const wrap = mapCv.parentElement.getBoundingClientRect();
+      const tx = e.clientX - wrap.left + 16, ty = e.clientY - wrap.top + 16;
+      tip.style.left = `${Math.min(tx, wrap.width - 240)}px`;
+      tip.style.top = `${Math.min(ty, wrap.height - 90)}px`;
+    });
+    mapCv.addEventListener('mouseleave', () => { this._hover = -1; tip.classList.add('hidden'); });
 
     // journal
     this.journalEl = document.createElement('div');
@@ -75,7 +100,17 @@ export class Journal {
     });
   }
 
+  toggleHelp(force) {
+    const el = document.getElementById('help');
+    if (!el) return;
+    const open = force ?? el.classList.contains('hidden');
+    el.classList.toggle('hidden', !open);
+  }
+
   setWorld(mode) {
+    this.mapEl.classList.toggle('parchment', mode === 'nature');
+    this.mapEl.classList.toggle('transit', mode === 'city');
+    this.mapEl.querySelector('#mapTitle').textContent = mode === 'nature' ? 'The Wilds' : 'New York';
     this.mapBase = this.worlds.mapBase(MAP_PX, mode);
     this.mapHalf = mode === 'nature' ? 2000 : (this.worlds?.city?.mapHalf || 1800);
     this.fogOn = mode === 'nature';
@@ -103,7 +138,7 @@ export class Journal {
   }
 
   get anyOpen() {
-    return this.mapOpen || this.journalOpen;
+    return this.mapOpen || this.journalOpen || !document.getElementById('help')?.classList.contains('hidden') || !!this.extraOpen?.();
   }
 
   refreshList() {
@@ -112,22 +147,45 @@ export class Journal {
       Number(b.discovered) - Number(a.discovered));
     list.innerHTML = '';
     for (const s of sites) {
-      const row = document.createElement('div');
-      row.className = `entry ${s.discovered ? 'found' : 'rumor'}`;
+      const card = document.createElement('div');
+      card.className = `card ${s.discovered ? 'found' : 'rumor'}`;
       if (s.discovered) {
-        const icon = document.createElement('canvas');
-        icon.width = icon.height = 44;
-        drawPoiIcon(icon.getContext('2d'), s.type, 22, 24, 12);
-        const text = document.createElement('div');
-        text.innerHTML = `<b>${s.name}</b><span>${s.flavor}</span>
-          <i>${Math.round(s.x)}, ${Math.round(s.z)}</i>`;
-        row.append(icon, text);
+        const photo = document.createElement('div');
+        photo.className = 'photo';
+        const shot = this.thumbs[s.id];
+        if (shot) {
+          const img = document.createElement('img');
+          img.src = shot;
+          img.alt = s.name;
+          photo.appendChild(img);
+        } else {
+          // no photograph yet (found before photos existed): a painted glyph on a dusk sky
+          const art = document.createElement('canvas');
+          art.width = 240; art.height = 128;
+          const g = art.getContext('2d');
+          const sky = g.createLinearGradient(0, 0, 0, 128);
+          sky.addColorStop(0, '#2b2f55'); sky.addColorStop(1, '#a66a5c');
+          g.fillStyle = sky; g.fillRect(0, 0, 240, 128);
+          g.fillStyle = 'rgba(255,255,255,0.7)';
+          for (let i = 0; i < 26; i++) g.fillRect((i * 97) % 240, (i * 53) % 70, 1.2, 1.2);
+          g.shadowColor = POI_ICONS[s.type]?.color || '#fff'; g.shadowBlur = 18;
+          drawPoiIcon(g, s.type, 120, 70, 24);
+          photo.appendChild(art);
+        }
+        const badge = document.createElement('div');
+        badge.className = 'badge';
+        badge.innerHTML = svgIcon(s.type, 17);
+        photo.appendChild(badge);
+        const body = document.createElement('div');
+        body.className = 'body';
+        body.innerHTML = `<b>${s.name}</b><span>${s.flavor}</span><i>${Math.round(s.x)}, ${Math.round(s.z)}</i>`;
+        card.append(photo, body);
       } else {
         const label = POI_ICONS[s.type].label;
-        row.innerHTML = `<div class="rumor-mark">?</div>
-          <div><b>A ${label}, somewhere</b><span>Rumor only — the map hasn't found it yet.</span></div>`;
+        card.innerHTML = `<div class="photo"><div class="mark">?</div></div>
+          <div class="body"><b>A ${label}, somewhere</b><span>Rumour only — the map hasn't found it yet.</span></div>`;
       }
-      list.appendChild(row);
+      list.appendChild(card);
     }
     const found = this.worlds.sites().filter((s) => s.discovered).length;
     const total = this.worlds.sites().length;
@@ -152,7 +210,7 @@ export class Journal {
       const { grid, N } = this.exploration;
       const worldSize = 4000;
       const cell = MAP_PX / N;
-      ctx.fillStyle = 'rgba(7, 11, 18, 0.82)';
+      ctx.fillStyle = 'rgba(40, 28, 14, 0.8)';
       for (let iz = 0; iz < N; iz++) {
         for (let ix = 0; ix < N; ix++) {
           if (!grid[iz * N + ix]) {
@@ -169,7 +227,10 @@ export class Journal {
 
     // discovered landmarks: icon + name
     ctx.textAlign = 'center';
-    ctx.font = '600 11px ui-sans-serif, system-ui';
+    const parch = this.worlds.mode === 'nature';
+    this._pins.length = 0;
+    const labelFont = parch ? '500 italic 16px "Cormorant Garamond", Georgia, serif' : '600 10px "Inter Variable", system-ui, sans-serif';
+    ctx.font = labelFont;
     for (const s of this.worlds.sites()) {
       if (!s.discovered) continue;
       const [mx, mz] = w2p(s.x, s.z);
@@ -177,8 +238,17 @@ export class Journal {
       ctx.fillStyle = 'rgba(5, 9, 15, 0.55)';
       ctx.beginPath(); ctx.arc(mx, mz, 11, 0, Math.PI * 2); ctx.fill();
       drawPoiIcon(ctx, s.type, mx, mz, 7);
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      ctx.fillText(s.name, mx, mz + 22);
+      this._pins.push({
+        x: mx, y: mz, r: 13,
+        html: `<b>${svgIcon(s.type, 16)}${s.name}</b><span>${s.flavor}</span><i>${POI_ICONS[s.type]?.label || ''} · ${Math.round(s.x)}, ${Math.round(s.z)}</i>`,
+      });
+      if (this._pins.length - 1 === this._hover) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(mx, mz, 15, 0, Math.PI * 2); ctx.stroke();
+      }
+      if (parch) { ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(244,232,200,0.9)'; ctx.strokeText(s.name, mx, mz + 24); ctx.fillStyle = '#3a2810'; }
+      else ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.fillText(s.name, mx, mz + 24);
     }
 
     // the gate between worlds is always marked — clamped fully on-map
@@ -200,6 +270,10 @@ export class Journal {
         drawPoiIcon(ctx, 'gate', gx, gz, 7.5);
         ctx.fillStyle = 'rgba(203, 184, 245, 0.95)';
         ctx.fillText(this.worlds.mode === 'city' ? 'The Way Back' : 'The Ancient Gate', gx, gz + 30);
+        this._pins.push({
+          x: gx, y: gz, r: 16,
+          html: `<b>${svgIcon('gate', 16)}${this.worlds.mode === 'city' ? 'The Way Back' : 'The Ancient Gate'}</b><span>${this.worlds.mode === 'city' ? 'Step through to return to the Wilds.' : 'Step through to reach New York.'}</span>`,
+        });
       }
     }
 
@@ -219,12 +293,14 @@ export class Journal {
     ctx.strokeStyle = 'rgba(0,0,0,0.65)';
     ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(px, pz, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    this._pins.push({ x: px, y: pz, r: 9, html: '<b>You are here</b><span>The map follows the direction you face.</span>' });
 
     // north label — top-left, clear of the gate marker which lives at north
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.font = '700 13px ui-sans-serif, system-ui';
+    ctx.font = this.worlds.mode === 'nature' ? '600 italic 18px "Cormorant Garamond", Georgia, serif' : '700 12px "Inter Variable", system-ui, sans-serif';
+    ctx.fillStyle = this.worlds.mode === 'nature' ? '#3a2810' : 'rgba(255,255,255,0.8)';
     ctx.textAlign = 'left';
-    ctx.fillText('N ↑', 10, 20);
+    ctx.fillText('N ↑', 12, 24);
   }
 
   update(player) {

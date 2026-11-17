@@ -127,6 +127,7 @@ const COMMON = /* glsl */ `
   attribute float aRnd;
   attribute float aPart;
   uniform vec2 uPlayer;
+  uniform vec3 uPush;   // player xz + how hard they press the grass (0..1)
   uniform float uN, uCell, uRange, uTime, uWind, uNight, uWorldHalf, uTCell, uTexN;
   uniform sampler2D uHeightTex;
   uniform sampler2D uColorTex;
@@ -165,7 +166,12 @@ const GRASS_VERT = /* glsl */ `
   float dist = length(pos - uPlayer);
   float fade = 1.0 - smoothstep(uRange * 0.55, uRange, dist);
   float keep = step(h3, tc.a) * step(h4, fade * 1.15);
-  float hs = (0.7 + 0.7 * h1) * (0.5 + 0.5 * fade) * keep;
+  // the blades part around the explorer and bend flat underfoot
+  vec2 dpush = pos - uPush.xy;
+  float dl = length(dpush);
+  float pk = (1.0 - smoothstep(0.15, 1.3, dl)) * uPush.z;
+  vec2 pdir = dpush / max(dl, 0.06);
+  float hs = (0.7 + 0.7 * h1) * (0.5 + 0.5 * fade) * keep * (1.0 - 0.5 * pk * (1.0 - smoothstep(0.0, 0.55, dl) * 0.0));
   float ws = (0.9 + 0.5 * h2) * keep;
   vec3 transformed = vec3(pos.x, ground - 0.02, pos.y) + vec3(position.x * ws, position.y * hs, position.z * ws);
   float bend = aT * aT;
@@ -173,6 +179,8 @@ const GRASS_VERT = /* glsl */ `
   float sw = sin(uTime * 1.9 + pos.x * 0.6 + pos.y * 0.5 + aRnd * 6.28);
   transformed.x += (sw * 0.06 + 0.13 * gust) * bend * uWind * hs;
   transformed.z += cos(uTime * 1.6 + pos.y * 0.5 + aRnd * 5.0) * 0.05 * bend * uWind * hs;
+  transformed.xz += pdir * pk * 0.55 * bend;
+  transformed.y -= pk * 0.12 * aT;
 
   vec3 gc = tc.rgb;
   vec3 root = gc * vec3(0.40, 0.55, 0.30);
@@ -263,10 +271,26 @@ function injectSurface(material, kind, uniforms) {
 
 export class Grass {
   constructor(terrain, scene, wind, quality) {
-    const q = quality.grass || 0;
-    this.enabled = q > 0;
+    this.terrain = terrain;
+    this.wind = wind;
     this.group = new THREE.Group();
     scene.add(this.group);
+    this._build(quality.grass || 0);
+  }
+
+  // change density without a reload: throw the instanced meshes away and rebuild them
+  setQuality(quality) {
+    for (const c of [...this.group.children]) {
+      this.group.remove(c);
+      c.geometry.dispose();
+      c.material.dispose();
+    }
+    this._build(quality.grass || 0);
+  }
+
+  _build(q) {
+    const terrain = this.terrain, wind = this.wind;
+    this.enabled = q > 0;
     if (!this.enabled) return;
 
     const RANGE = 44;
@@ -275,6 +299,7 @@ export class Grass {
 
     this.shared = {
       uPlayer: { value: new THREE.Vector2() },
+      uPush: { value: new THREE.Vector3() },
       uTime: { value: 0 },
       uWind: wind,
       uNight: { value: 0 },
@@ -328,9 +353,10 @@ export class Grass {
 
   get roots() { return [this.group]; }
 
-  update(playerPos, elapsed, sky) {
+  update(playerPos, elapsed, sky, push = 0) {
     if (!this.enabled) return;
     this.shared.uPlayer.value.set(playerPos.x, playerPos.z);
+    this.shared.uPush.value.set(playerPos.x, playerPos.z, push);
     this.shared.uTime.value = elapsed;
     this.shared.uNight.value = Math.pow(1 - sky.daylight, 1.3);
   }

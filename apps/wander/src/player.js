@@ -25,6 +25,9 @@ export class Player {
     this.pitch = -0.08;
     this.keys = Object.create(null);
     this.inputEnabled = false;
+    this.sens = 1;          // mouse / stick look multiplier (settings)
+    this.invertY = false;
+    this.baseFov = 70;
     this.grounded = false;
     this.inWater = false;
     this.flying = false;
@@ -72,8 +75,8 @@ export class Player {
   }
 
   look(dx, dy) {
-    this.yaw -= dx * 0.0022;
-    this.pitch -= dy * 0.0022;
+    this.yaw -= dx * 0.0022 * this.sens;
+    this.pitch -= dy * 0.0022 * this.sens * (this.invertY ? -1 : 1);
     this.pitch = Math.max(-1.45, Math.min(1.35, this.pitch));
   }
 
@@ -229,7 +232,7 @@ export class Player {
       this.model.root.visible = false;
     }
 
-    const targetFov = (hSpeed > 17 || (this.flying && speed3 > 17)) ? 77 : 70;
+    const targetFov = this.baseFov + ((hSpeed > 17 || (this.flying && speed3 > 17)) ? 7 : 0);
     if (Math.abs(this.camera.fov - targetFov) > 0.01) {
       this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, 5 * dt);
       this.camera.updateProjectionMatrix();
@@ -246,6 +249,7 @@ export class Player {
       lookYaw: this.yaw,
       lookPitch: this.pitch,
       lift: this.lift,
+      groundAt: (x, z) => this.terrain.heightAt(x, z),
     });
   }
 }

@@ -19,6 +19,8 @@ export class Pipeline {
     this.renderer = renderer;
     this.quality = quality;
     this.mix = 0; // 0 = wilds grade, 1 = city grade (eased by the caller)
+    this.scale = 1; // adaptive resolution multiplier
+    this.onScale = null;
 
     const w = innerWidth, h = innerHeight;
     renderer.setPixelRatio(Math.min(devicePixelRatio, quality.pixelRatio));
@@ -51,14 +53,38 @@ export class Pipeline {
     this.gradePass = makeGradePass();
     this.composer.addPass(this.gradePass);
 
-    if (quality.smaa) {
-      this.composer.addPass(new SMAAPass());
+    // SMAA is always in the chain and switched on or off by the tier
+    this.smaaPass = new SMAAPass();
+    this.smaaPass.enabled = !!quality.smaa;
+    this.composer.addPass(this.smaaPass);
+  }
+
+  // switch tier while running: resolution, anti-aliasing and the effect flags
+  // apply immediately (instance counts and the city mirror need a reload)
+  setQuality(q) {
+    this.quality = q;
+    this.bloom.enabled = q.bloom;
+    this.smaaPass.enabled = !!q.smaa;
+    for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+      rt.samples = q.msaa;
+      rt.dispose(); // re-created on next use with the new sample count
     }
+    this.setScale(1);
   }
 
   resize() {
     this.renderer.setSize(innerWidth, innerHeight);
     this.composer.setSize(innerWidth, innerHeight);
+  }
+
+  // adaptive resolution: a fraction of the tier's pixel ratio
+  setScale(s) {
+    this.scale = s;
+    const pr = Math.min(devicePixelRatio, this.quality.pixelRatio) * s;
+    this.renderer.setPixelRatio(pr);
+    this.composer.setPixelRatio(pr);
+    this.composer.setSize(innerWidth, innerHeight);
+    this.onScale?.(pr);
   }
 
   // blend the two worlds' grades; `sky` drives hour-of-day tinting
@@ -94,6 +120,7 @@ export class Pipeline {
     const q = this.quality;
     au.uMist.value = q.mist ? sky.mistDensity : 0;
     au.uShafts.value = q.shafts ? sky.shaftStrength : 0;
+    au.uAO.value = q.ao || 0;
     au.uScatter.value = sky.scatterStrength;
   }
 
@@ -104,6 +131,13 @@ export class Pipeline {
     u.uPortalTint.value.copy(tint);
     // the crossing keeps the colour of the gate you walked into
     if (!this.warpPass.enabled) this.warpPass.warp.uTint.value.copy(tint);
+  }
+
+  // photo mode: 0 = off, ~1 = a gentle portrait lens
+  setDof(aperture) {
+    const d = this.atmosphere.dof;
+    if (aperture > 0 && !d.active) d.resetFocus();
+    d.aperture = aperture;
   }
 
   // 0 = off, 1 = the screen is a flat wash of portal light

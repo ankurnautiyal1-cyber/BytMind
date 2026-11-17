@@ -10,41 +10,83 @@
   <body>
     <div id="app"></div>
 
+    <!-- in-game HUD: quiet by default, fades away when you stop touching things -->
     <div id="hud">
       <div id="crosshair"></div>
-      <div id="brand" class="chip">WANDER</div>
-      <div id="stats" class="chip">
-        <div><b>Time</b><span id="hudTime">—</span></div>
-        <div><b>Biome</b><span id="hudBiome">—</span></div>
-        <div><b>Pos</b><span id="hudPos">—</span></div>
-        <div><b>Shards</b><span id="hudShards">—</span></div>
+
+      <div id="place" class="fadeable">
+        <div class="place-name" id="hudBiome">—</div>
+        <div class="place-meta">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 4.4V8l2.4 1.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          <span id="hudTime">—</span>
+          <span class="dot"></span>
+          <span id="hudPos">—</span>
+        </div>
       </div>
-      <canvas id="compass" width="340" height="40"></canvas>
-      <canvas id="minimap" width="172" height="172"></canvas>
+
+      <canvas id="compass" class="fadeable" width="360" height="46"></canvas>
+
+      <div id="shardCounter" class="fadeable" title="Spirit shards">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 12.2 6 8 14.8 3.8 6z" fill="currentColor" opacity=".9"/><path d="M3.8 6h8.4M8 1.2 6.2 6 8 14.8 9.8 6z" fill="none" stroke="#0b1018" stroke-width=".7" opacity=".5"/></svg>
+        <span id="hudShards">—</span>
+      </div>
+
+      <canvas id="minimap" class="fadeable" width="172" height="172"></canvas>
+
       <div id="toast"></div>
-      <div id="hint" class="chip">WASD move &nbsp;·&nbsp; mouse look &nbsp;·&nbsp; shift sprint &nbsp;·&nbsp; space jump / swim &nbsp;·&nbsp; hold P fly &nbsp;·&nbsp; V view &nbsp;·&nbsp; M map &nbsp;·&nbsp; Tab journal &nbsp;·&nbsp; esc pause</div>
+      <div id="hint"><kbd>WASD</kbd> move · <kbd>Shift</kbd> sprint · <kbd>Space</kbd> jump · hold <kbd>P</kbd> to fly · <kbd>M</kbd> map · <kbd>Tab</kbd> journal · <kbd>C</kbd> photo · <kbd>H</kbd> all controls</div>
+    </div>
+
+    <!-- cinematic moments: letterbox + a title card for discoveries and arrivals -->
+    <div id="letterbox" aria-hidden="true"><i></i><i></i></div>
+    <div id="moment" aria-live="polite">
+      <div class="m-kicker"></div>
+      <div class="m-title"></div>
+      <div class="m-rule"></div>
+      <div class="m-sub"></div>
     </div>
 
     <div id="tint"></div>
 
+    <!-- title / pause screen -->
     <div id="overlay">
-      <div class="card">
-        <div class="brand">W A N D E R</div>
-        <p class="tag">A procedurally generated open world · built with three.js</p>
-        <div class="keys">
-          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span>
-          <span><kbd>Mouse</kbd> look</span>
-          <span><kbd>Shift</kbd> sprint</span>
-          <span><kbd>Space</kbd> jump · swim</span>
-          <span><kbd>P</kbd> hold to fly</span>
-          <span><kbd>V</kbd> 1st / 3rd person</span>
-          <span><kbd>M</kbd> map</span>
-          <span><kbd>Tab</kbd> journal</span>
-          <span><kbd>Scroll</kbd> zoom</span>
-          <span><kbd>Esc</kbd> pause</span>
-        </div>
+      <div class="title-wrap">
+        <div class="eyebrow">an open world</div>
+        <h1 class="logo">Wander</h1>
+        <div class="rule"><span></span><i></i><span></span></div>
+        <p class="tag">Two worlds, one gate.</p>
         <div class="cta" id="cta">click to explore</div>
-        <p class="meta" id="seedLabel"></p>
+      </div>
+      <div class="title-foot">
+        <span id="seedLabel"></span>
+        <span class="foot-btns">
+          <button id="settingsBtn" type="button"><kbd>O</kbd> settings</button>
+          <button id="helpBtn" type="button"><kbd>H</kbd> controls</button>
+        </span>
+      </div>
+    </div>
+
+    <!-- compact controls sheet (H) -->
+    <div id="help" class="panel hidden">
+      <div class="panel-head"><span class="panel-title">Controls</span><span class="panel-sub">H or Esc to close</span></div>
+      <div class="help-grid">
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>move</span></div>
+        <div><kbd>Mouse</kbd><span>look</span></div>
+        <div><kbd>Shift</kbd><span>sprint</span></div>
+        <div><kbd>Space</kbd><span>jump · swim up</span></div>
+        <div><kbd>P</kbd><span>hold to fly</span></div>
+        <div><kbd>V</kbd><span>first / third person</span></div>
+        <div><kbd>Scroll</kbd><span>zoom camera</span></div>
+        <div><kbd>M</kbd><span>map</span></div>
+        <div><kbd>Tab</kbd><span>field journal</span></div>
+        <div><kbd>C</kbd><span>photo mode</span></div>
+        <div><kbd>O</kbd><span>settings</span></div>
+        <div><kbd>U</kbd><span>hood up / down</span></div>
+        <div><kbd>Esc</kbd><span>pause</span></div>
+      </div>
+      <div class="help-settings">
+        <button type="button" id="helpSettings">Open settings…</button>
+        <div class="set-note">Graphics, field of view and look sensitivity. A controller works too.</div>
       </div>
     </div>
 

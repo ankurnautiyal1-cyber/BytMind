@@ -2,7 +2,7 @@
 // pose switcher. Driven by setInterval so it renders even in browsers that
 // starve requestAnimationFrame (embedded test panes).
 import * as THREE from 'three';
-import { createCharacter } from './character.js';
+import { createCharacter, charEnv } from './character.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -57,13 +57,22 @@ let camY = 1.35;
 let lookY = 1.0;
 let last = performance.now();
 
+// ?pose=idle&cam=azimuth,dist,camY,lookY[&hood=1] — deep-link a view (handy for headless screenshots)
+const qs = new URLSearchParams(location.search);
+if (POSES[qs.get('pose')]) pose = qs.get('pose');
+if (qs.has('cam')) {
+  const [a, d, y, t] = qs.get('cam').split(',').map(Number);
+  angle = a; dist = d; camY = y; lookY = t ?? lookY;
+}
+if (qs.has('hood')) charEnv.hoodUp = true;
+
 window.__pose = (name) => { if (POSES[name]) pose = name; };
 window.__cam = (deg, d, y, ty = 1.0) => { angle = deg; dist = d; camY = y; lookY = ty; frame(); };
 window.__render = () => {
   for (let i = 0; i < 30; i++) model.update(1 / 30, {
     vx: 0, vz: 0, vy: 0, speed: POSES[pose].speed, grounded: POSES[pose].grounded,
     inWater: !!POSES[pose].inWater, flying: !!POSES[pose].flying,
-    lookYaw: 0, lookPitch: 0.06, lift: 0,
+    lookYaw: 0, lookPitch: 0.06, lift: 0, groundAt: () => 0,
   });
   frame();
 };
@@ -90,7 +99,7 @@ function frame() {
     vx, vz, vy: p.vy ?? (p.grounded ? 0 : -2),
     speed: p.speed, grounded: p.grounded,
     inWater: !!p.inWater, flying: !!p.flying,
-    lookYaw: yaw, lookPitch: 0.06, lift: 0,
+    lookYaw: yaw, lookPitch: 0.06, lift: 0, groundAt: () => 0,
   });
   const a = (angle * Math.PI) / 180;
   camera.position.set(Math.sin(a) * dist, camY, Math.cos(a) * dist);

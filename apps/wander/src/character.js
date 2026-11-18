@@ -102,9 +102,10 @@ export function createCharacter() {
     handR = g.getObjectByName('Hand_R');
     for (const side of ['L', 'R']) {
       const thigh = g.getObjectByName(`Thigh_${side}`), shin = g.getObjectByName(`Shin_${side}`), foot = g.getObjectByName(`Foot_${side}`);
-      if (thigh && shin && foot) legs.push({ thigh, shin, foot });
+      if (thigh && shin && foot) legs.push({ thigh, shin, foot, qThigh: new THREE.Quaternion(), qShin: new THREE.Quaternion() });
     }
     mixer.update(0);
+    saveLegPose();
     root.updateMatrixWorld(true);
     const local = (bone, x, y, z) => bone.worldToLocal(g.localToWorld(new THREE.Vector3(x, y, z)));
     const col = (hex) => new THREE.Color(hex);
@@ -141,7 +142,7 @@ export function createCharacter() {
         const anchors = [];
         for (let c = 0; c < 3; c++) anchors.push(local(neckBone, side * 0.05 + (c - 1) * 0.034, 1.455, -0.075));
         cloths.push(new Cloth({
-          driver: neckBone, anchorsLocal: anchors, cols: 3, rows: 10, widths: [0.07, 0.085], length: 0.78,
+          driver: neckBone, anchorsLocal: anchors, cols: 3, rows: 10, widths: [0.05, 0.065], length: 0.55,
           gravity: 6.5, air: 3.2, damping: 0.982, collide: scarfCollide,
           colors: (t, u, r) => (r >= 9 ? col(0xcfc3a6) : ((r >> 1) % 2 ? col(0xb53a2e) : col(0xcfc3a6))),
         }));
@@ -158,6 +159,7 @@ export function createCharacter() {
       const centre = mid.clone().add(new THREE.Vector3(0, 0.012, 0.034)); // a little behind the eyes (the model faces -Z)
       const mat = cloakMat.clone();
       mat.side = THREE.DoubleSide;
+      mat.vertexColors = false; // the baked-AO colours belong to the GLB meshes, not this sphere
       applyRim(mat, 0.4);
       cowl = new THREE.Mesh(
         new THREE.SphereGeometry(0.158, 26, 16, Math.PI * 1.75, Math.PI * 1.5, 0, Math.PI * 0.68),
@@ -185,18 +187,36 @@ export function createCharacter() {
     bone.quaternion.copy(_pq2.multiply(_q).multiply(_wq));
     bone.updateMatrixWorld(true);
   }
+  // The mixer only rewrites a bone when its clip value changes, so for a static
+  // clip (idle) the IK would be re-solved on top of its own previous result every
+  // frame and drift (a leg slowly spinning). Keep the IK stateless: remember the
+  // clip's pose for the leg bones and put it back before each mixer step.
+  function saveLegPose() {
+    for (const l of legs) { l.qThigh.copy(l.thigh.quaternion); l.qShin.copy(l.shin.quaternion); }
+  }
+  function restoreLegPose() {
+    for (const l of legs) { l.thigh.quaternion.copy(l.qThigh); l.shin.quaternion.copy(l.qShin); }
+  }
+
+  const _fwd = new THREE.Vector3();   // the explorer's forward (-Z) in world space
   function solveLeg(leg, targetY, w) {
     const { thigh, shin, foot } = leg;
     thigh.getWorldPosition(_A); shin.getWorldPosition(_B); foot.getWorldPosition(_C);
+    if (Math.abs(targetY - _C.y) * w < 1e-4) return; // nothing to correct: keep the clip's pose
     _T.copy(_C); _T.y += (targetY - _C.y) * w;
     const l1 = _A.distanceTo(_B), l2 = _B.distanceTo(_C);
     _dir.subVectors(_T, _A);
-    const d = THREE.MathUtils.clamp(_dir.length(), Math.abs(l1 - l2) + 1e-3, l1 + l2 - 1e-3);
+    // reach limit is exactly l1+l2 (no margin): a clip leg that is already straight
+    // stays straight instead of being forced into a visible knee bend
+    const d = THREE.MathUtils.clamp(_dir.length(), Math.abs(l1 - l2) + 1e-3, l1 + l2);
     _dir.normalize();
     _AB.subVectors(_B, _A);
     _AC.subVectors(_C, _A);
+    // knee-bend direction: the clip's own bend, biased toward "forward" so that
+    // a (nearly) straight leg has a stable pole instead of a noise-driven one
+    // that makes the leg spin around its axis
     _pole.copy(_AB).addScaledVector(_AC, -_AB.dot(_AC) / Math.max(1e-8, _AC.lengthSq()));
-    if (_pole.lengthSq() < 1e-8) _pole.set(0, 0, -1);
+    _pole.addScaledVector(_fwd, 0.01);
     _pole.addScaledVector(_dir, -_pole.dot(_dir)).normalize();
     const cosA = THREE.MathUtils.clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1);
     const sinA = Math.sqrt(1 - cosA * cosA);
@@ -248,7 +268,9 @@ export function createCharacter() {
         : state === 'run' ? THREE.MathUtils.clamp(p.speed * RUN_TS, 0.7, 2.0)
         : 1;
       actions[current].timeScale = ts;
+      restoreLegPose();
       mixer.update(dt);
+      saveLegPose();
 
       // feet follow the ground (slopes, steps); hips drop toward the lower foot
       const wantIK = p.groundAt && p.grounded && !p.flying && !p.inWater && (state === 'idle' || state === 'walk' || state === 'run');
@@ -257,6 +279,7 @@ export function createCharacter() {
       inner.position.y = hipDrop;
       if (ikW > 0.02 && legs.length === 2 && p.groundAt) {
         root.updateMatrixWorld(true);
+        root.getWorldDirection(_fwd).negate(); // model faces -Z
         const base = root.position.y;
         let lowest = 0;
         for (const leg of legs) {

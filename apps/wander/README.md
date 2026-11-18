@@ -51,11 +51,11 @@ Rebuild the player character (sculpted body, skeleton, baked clips → `characte
 /Applications/Blender.app/Contents/MacOS/Blender --background --python tools/build_character.py
 ```
 
-The character is an anatomically proportioned hiker (8-head canon, 1.80 m):
-~90 anatomical volumes fused via voxel remesh into one organic mesh, per-face
-clothing materials, a 19-bone skeleton with automatic weights, and six
-frame-baked clips (idle / walk / run / swim / fly / fall) that three.js
-crossfades by movement state. Renders of every pose land in `tools/preview/`.
+The character is a stylised trail-hiker (~7.3 heads, 1.82 m): ~190 volumes fused via voxel
+remesh into one organic mesh with per-face clothing materials, a 19-bone skeleton with
+geometric skin weights, and six frame-baked clips (idle / walk / run / swim / fly / fall) that
+three.js crossfades by movement state. Renders of every pose land in `tools/preview/`
+(set `WANDER_CHAR_OUT` / `WANDER_CHAR_PREVIEW` to stage a build elsewhere first).
 
 Production build:
 
@@ -207,12 +207,16 @@ landmarks and the gate; the city builds its own on first transit) and the
 `Worlds` manager hands the active one to the player.
 
 ## Character
-The explorer is built in Blender (`tools/build_character.py`): ~90 tapered volumes fused by voxel
+The explorer is built in Blender (`tools/build_character.py`): ~190 tapered volumes fused by voxel
 remesh into one smooth body (limbs are dense chains of overlapping spheres, so they read as tubes),
-a 19-bone skeleton with automatic weights, hands with fingers, a shoulder mantle, a bunched hood, a
-belt lantern, and six frame-baked clips (idle / walk / run / swim / fly / fall) that
-`src/character.js` crossfades by movement state, adding head look and blinking. Previews of every
-pose land in `tools/preview/`.
+plus a head modelled on a reference photo (tousled black hair with a heavy fringe, a full stubble beard and moustache, an open smile with teeth, blinkable eyes, swim goggles worn over the eyes — set `GOGGLES_DOWN = False` in the script to push them up onto the hair), leather gloves, jacket zipper and
+pocket flaps, laced boots, a pack, a shoulder mantle, a bunched hood and a belt lantern. The 19-bone
+skeleton is weighted geometrically (each vertex belongs to the axial / arm / leg group of its nearest
+volumes, blended along that chain by height), so arms never drag the hip. Ambient occlusion and a
+little face blush are baked into vertex colours (`COLOR_0`). Six frame-baked clips (idle / walk /
+run / swim / fly / fall) are crossfaded by `src/character.js` by movement state, adding head look
+and blinking. Previews of every pose land in `tools/preview/`; `char-preview.html` accepts
+`?pose=walk&cam=azimuth,dist,camY,lookY[&hood=1]`.
 
 On top of the baked rig the engine adds:
 - **Cloth** (`src/cloth.js`): a verlet cape from the shoulders and two scarf tails from the neck,
